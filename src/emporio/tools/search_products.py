@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import math
 from decimal import Decimal
 
-from emporio.tools.base import Tool, ToolContext, product_summary
+from emporio.tools.base import Tool, ToolContext, _cat_name, product_summary
 
 _TOOL_PARAMS = {
     "type": "object",
@@ -21,7 +22,10 @@ def _handler(ctx: ToolContext, args: dict) -> dict:
     categoria = args.get("categoria")
     preco_max = args.get("preco_max")
     if preco_max is not None:
-        preco_max = Decimal(str(preco_max))
+        if isinstance(preco_max, float) and math.isinf(preco_max):
+            preco_max = None
+        else:
+            preco_max = Decimal(str(preco_max))
     apenas_estoque = args.get("apenas_em_estoque", False)
 
     results = ctx.products.search(
@@ -42,7 +46,8 @@ def _handler(ctx: ToolContext, args: dict) -> dict:
     summaries = []
     for p in results:
         promo = ctx.promotions.get_active_for_product(p.product_id)
-        summaries.append(product_summary(p, promo, ctx.today))
+        cat = _cat_name(ctx, p.category_id)
+        summaries.append(product_summary(p, promo, ctx.today, category_name=cat))
 
     return {"total": len(summaries), "produtos": summaries}
 

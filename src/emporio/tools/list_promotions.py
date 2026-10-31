@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from emporio.tools.base import Tool, ToolContext, product_summary
+from emporio.text import normalize
+from emporio.tools.base import Tool, ToolContext, _cat_name, product_summary
 
 _AVISO_PROMO = (
     "Promoções não são cumulativas e o desconto de 5% do PIX "
@@ -12,9 +13,13 @@ def _handler(ctx: ToolContext, args: dict) -> dict:
     filtro = args.get("produto_ou_categoria")
 
     if filtro:
-        from emporio.text import normalize
-
         norm = normalize(filtro)
+        if not norm:
+            return {
+                "promocoes": [],
+                "aviso": "Não há promoção vigente para o item informado.",
+            }
+        cat_ids = ctx.products._resolve_category(filtro)
         all_active = ctx.promotions.list_active()
         matched = []
         for promo in all_active:
@@ -25,14 +30,10 @@ def _handler(ctx: ToolContext, args: dict) -> dict:
             if norm in prod_norm:
                 matched.append((prod, promo))
                 continue
-            cat_name = ""
-            for c in ctx.products.list_categories():
-                if c.category_id == prod.category_id:
-                    cat_name = c.name
-                    break
-            if norm in normalize(cat_name):
+            if cat_ids and prod.category_id in cat_ids:
                 matched.append((prod, promo))
-        active = [m for m in matched]
+                continue
+        active = matched
     else:
         active = [(ctx.products.get(p.product_id), p) for p in ctx.promotions.list_active()]
         active = [(p, r) for p, r in active if p is not None]
@@ -45,7 +46,8 @@ def _handler(ctx: ToolContext, args: dict) -> dict:
 
     items = []
     for prod, promo in active:
-        s = product_summary(prod, promo, ctx.today)
+        cat = _cat_name(ctx, prod.category_id)
+        s = product_summary(prod, promo, ctx.today, category_name=cat)
         items.append(s)
 
     return {"promocoes": items, "aviso": _AVISO_PROMO}
