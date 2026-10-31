@@ -15,7 +15,7 @@ Formato: contexto → decisão → alternativas → consequência. Atualizado ao
 - **Consequência:** SQL simples e testável; sem estado persistente.
 
 ## ADR-003 — Políticas: BM25 sobre fragmentos por seção
-- **Contexto:** PDF de 8 páginas (~15 mil caracteres, ~25 seções/subseções).
+- **Contexto:** PDF de 8 páginas (~14 mil caracteres, ~25 seções/subseções).
 - **Decisão:** extrair com `pypdf` em modo `layout`, fragmentar por seção numerada preservando número e título como metadado, indexar com BM25 (`rank_bm25`) com normalização de acentos/caixa.
 - **Alternativas:** embeddings/banco vetorial (sobre-engenharia para o volume), colocar o PDF inteiro no prompt (perde a citação de seção e escala mal).
 - **Consequência:** resposta cita a seção ("Política §4.1"); sem custo de embeddings.

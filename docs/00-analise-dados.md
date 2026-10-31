@@ -10,10 +10,10 @@ Os arquivos originais **não são alterados**; todo tratamento acontece na carga
 | `desafio_tecnico_ai_eng - categories.csv` | 9 | 9 categorias; só 1–5 e 9 têm produtos |
 | `desafio_tecnico_ai_eng - customers.csv` | 50 | `customer_id, name, phone, email, city` |
 | `desafio_tecnico_ai_eng - orders.csv` | 20 | `status` ∈ delivered(7), confirmed(4), pending(4), cancelled(4), shipped(1) |
-| `desafio_tecnico_ai_eng - order_items.csv` | 21 | sem chave própria; pedido 15 e 20 têm 2 itens |
+| `desafio_tecnico_ai_eng - order_items.csv` | 22 | sem chave própria; pedido 15 e 20 têm 2 itens |
 | `desafio_tecnico_ai_eng - products.csv` | 65 | ids 81–145, contíguos; 0 nulos, 0 duplicatas de id/nome |
 | `desafio_tecnico_ai_eng - promotions.csv` | 25 | 21 inativas, 4 ativas |
-| `políticas_da_loja.pdf` | 8 páginas, ~15 mil caracteres | texto selecionável |
+| `políticas_da_loja.pdf` | 8 páginas, ~14 mil caracteres | texto selecionável |
 
 > Os nomes dos arquivos diferem dos sugeridos no enunciado (`products.csv` etc.). Como os originais são intocáveis, a carga deve mapear os nomes reais.
 
@@ -61,7 +61,7 @@ Os arquivos originais **não são alterados**; todo tratamento acontece na carga
 
 ## 5. Implicações para a arquitetura
 
-1. **Volume minúsculo** (65 produtos, 20 pedidos, 15 mil caracteres de política) → SQLite em memória carregado dos CSVs; **BM25 simples** (ou até TF-IDF) sobre ~25 fragmentos basta; sem banco vetorial nem embeddings.
+1. **Volume minúsculo** (65 produtos, 20 pedidos, 14 mil caracteres de política) → SQLite em memória carregado dos CSVs; **BM25 simples** (ou até TF-IDF) sobre ~25 fragmentos basta; sem banco vetorial nem embeddings.
 2. **Verificação por e-mail** (sem CPF) e sempre pelo par pedido+e-mail; resposta idêntica para "pedido inexistente" e "e-mail errado" (evita enumeração de pedidos).
 3. **Disponibilidade** = status ativo + estoque > 0; **promoção** = `is_active = 1`, sempre mostrada com preço original e percentual (§6.2).
 4. **Datas** configuráveis (`REFERENCE_DATE`); data de recebimento ausente → raciocínio explícito e encaminhamento.
