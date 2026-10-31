@@ -8,7 +8,8 @@ from difflib import SequenceMatcher
 from emporio.data.models import Category, Order, OrderItem, Product, Promotion
 from emporio.text import compact, normalize
 
-SIMILARITY_THRESHOLD = 0.6
+SIMILARITY_THRESHOLD = 0.8
+_MIN_FUZZY_TOKEN_LEN = 4
 
 
 class ProductRepository:
@@ -124,45 +125,29 @@ class ProductRepository:
         cat_tokens = set(norm_cat.split())
         all_tokens = name_tokens | cat_tokens
 
-        # Rank 3 check first to compute best similarity
-        best_ratio = 0.0
-        tokens_text = f"{norm_name} {normalize(product.description)} {norm_cat}"
-        for word in tokens_text.split():
-            for tok in tokens:
-                ratio = SequenceMatcher(None, tok, word).ratio()
-                if ratio > best_ratio:
-                    best_ratio = ratio
-
-        # Rank 3 check first to compute best per-token ratio
-        tokens_text = f"{norm_name} {normalize(product.description)} {norm_cat}"
-        all_tokens_ok = True
-        best_ratio = 0.0
-        for tok in tokens:
-            tok_best = 0.0
-            for word in tokens_text.split():
-                ratio = SequenceMatcher(None, tok, word).ratio()
-                if ratio > tok_best:
-                    tok_best = ratio
-            if tok_best > best_ratio:
-                best_ratio = tok_best
-            if tok_best < SIMILARITY_THRESHOLD:
-                all_tokens_ok = False
-
-        # Rank 1: every search token matches a word token in name or category (exact)
+        # Rank 1: every token matches exactly a word in name or category
         if all(t in all_tokens for t in tokens):
-            return (3, best_ratio)
+            return (3, 1.0)
 
-        # Rank 2: compact of product name contains compact of search term
+        # Rank 2: compact of term in compact of product name
         compact_term = compact(" ".join(tokens))
         compact_name = compact(norm_name)
         if compact_term and compact_term in compact_name:
-            return (2, best_ratio)
+            return (2, 0.0)
 
-        # Rank 3: each token must have a similar word
-        if all_tokens_ok and best_ratio >= SIMILARITY_THRESHOLD:
-            return (1, best_ratio)
-
-        return (0, 0.0)
+        # Rank 3 (fallback): fuzzy only for tokens >= 4 chars
+        suitable = [t for t in tokens if len(t) >= _MIN_FUZZY_TOKEN_LEN]
+        if not suitable:
+            return (0, 0.0)
+        tokens_text = f"{norm_name} {normalize(product.description)} {norm_cat}"
+        for tok in suitable:
+            ok = any(
+                SequenceMatcher(None, tok, word).ratio() >= SIMILARITY_THRESHOLD
+                for word in tokens_text.split()
+            )
+            if not ok:
+                return (0, 0.0)
+        return (1, 0.0)
 
     @staticmethod
     def _row_to_product(row: sqlite3.Row) -> Product:
