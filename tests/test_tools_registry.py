@@ -430,3 +430,47 @@ def test_build_registry_with_tmpdir(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir("/tmp")
     reg = build_registry(today=TODAY)
     assert len(reg.names()) == 7
+
+
+@pytest.mark.parametrize(
+    ("tool", "args"),
+    [
+        ("buscar_produtos", {"termo": "a" * 100_000}),
+        ("consultar_produto", {"produto": "x" * 100_000}),
+        ("consultar_politicas", {"pergunta": "frete " * 20_000}),
+    ],
+)
+def test_campo_string_gigante_em_dict_e_rejeitado_rapido(
+    registry: ToolRegistry, tool: str, args: dict
+) -> None:
+    import time
+
+    start = time.perf_counter()
+    result = json.loads(registry.execute(tool, args))
+    assert "erro" in result
+    assert time.perf_counter() - start < 1.0
+
+
+def test_busca_de_token_unico_enorme_no_repositorio_e_rapida(registry: ToolRegistry) -> None:
+    import time
+
+    start = time.perf_counter()
+    registry._context.products.search("a" * 100_000)
+    assert time.perf_counter() - start < 1.0
+
+
+@pytest.mark.parametrize(
+    ("filtro", "esperados"),
+    [
+        ("ukulele", {121, 127}),
+        ("Ukuleles", {121, 127}),
+        ("violao", {90, 94}),
+        ("violões", {90, 94}),
+    ],
+)
+def test_promocoes_filtro_categoria_singular_e_plural(
+    registry: ToolRegistry, filtro: str, esperados: set[int]
+) -> None:
+    result = json.loads(registry.execute("consultar_promocoes", {"produto_ou_categoria": filtro}))
+    ids = {int(p["id"]) for p in result["promocoes"]}
+    assert ids == esperados

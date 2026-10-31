@@ -20,7 +20,8 @@ from emporio.policies.retriever import PolicyRetriever
 log = logging.getLogger(__name__)
 
 
-_MAX_ARG_LEN = 500
+_MAX_ARG_LEN = 2000  # JSON bruto (string) inteiro
+_MAX_FIELD_LEN = 500  # cada valor string de argumento
 
 
 @dataclass(frozen=True)
@@ -102,6 +103,8 @@ class ToolRegistry:
                     del args[key]
                     continue
                 schema_type = props[key].get("type")
+                if isinstance(val, str) and len(val) > _MAX_FIELD_LEN:
+                    return _err(f"Argumento {key}: texto muito longo (máx. {_MAX_FIELD_LEN})")
                 if schema_type == "boolean" and val is not None:
                     if not isinstance(val, bool):
                         return _err(
