@@ -24,12 +24,18 @@ class ProductRepository:
     def find_by_name(self, term: str) -> list[Product]:
         if not term.strip():
             return []
-        pattern = f"%{term}%"
-        rows = self._conn.execute(
-            "SELECT * FROM products WHERE name LIKE ? ORDER BY price_cents, product_id",
-            (pattern,),
+        norm_term = normalize(term)
+        if not norm_term:
+            return []
+        all_rows = self._conn.execute(
+            "SELECT * FROM products ORDER BY price_cents, product_id"
         ).fetchall()
-        return [self._row_to_product(r) for r in rows]
+        results = []
+        for r in all_rows:
+            prod = self._row_to_product(r)
+            if norm_term in normalize(prod.name):
+                results.append(prod)
+        return results
 
     def search(
         self,
@@ -42,6 +48,8 @@ class ProductRepository:
         if not term.strip():
             return []
         norm_term = normalize(term)
+        if not norm_term:
+            return []
         tokens = norm_term.split()
 
         all_products = self._conn.execute(
@@ -53,23 +61,9 @@ class ProductRepository:
 
         cat_ids: set[int] | None = None
         if category is not None:
-            if isinstance(category, int):
-                cat_ids = {category}
-            else:
-                cat_norm = normalize(category)
-                cat_id_map: dict[str, int] = {}
-                cursor = self._conn.execute("SELECT category_id, name FROM categories")
-                for cid, cname in cursor.fetchall():
-                    cat_id_map[normalize(cname)] = int(cid)
-                if cat_norm in cat_id_map:
-                    cat_ids = {cat_id_map[cat_norm]}
-                else:
-                    partial = {
-                        k: v for k, v in cat_id_map.items() if cat_norm in k or k in cat_norm
-                    }
-                    cat_ids = set(partial.values()) if partial else {0}
+            cat_ids = self._resolve_category(category)
 
-        scored: list[tuple[int, Decimal, int, Product]] = []
+        scored: list[tuple[int, float, Decimal, int, Product]] = []
         for row in all_products:
             prod = self._row_to_product(row)
             cat_name: str = row["category_name"]
@@ -81,12 +75,12 @@ class ProductRepository:
             if only_available and not prod.is_available:
                 continue
 
-            score = self._match_score(norm_term, tokens, prod, cat_name)
+            score, similarity = self._match_score(tokens, prod, cat_name)
             if score > 0:
-                scored.append((score, prod.price_brl, prod.product_id, prod))
+                scored.append((score, similarity, prod.price_brl, prod.product_id, prod))
 
-        scored.sort(key=lambda x: (-x[0], x[1], x[2]))
-        return [p[3] for p in scored[:limit]]
+        scored.sort(key=lambda x: (-x[0], -x[1], x[2], x[3]))
+        return [p[4] for p in scored[:limit]]
 
     def list_categories(self) -> list[Category]:
         rows = self._conn.execute("SELECT * FROM categories ORDER BY category_id").fetchall()
@@ -99,33 +93,76 @@ class ProductRepository:
             for r in rows
         ]
 
+    def _resolve_category(self, category: str | int) -> set[int]:
+        if isinstance(category, int):
+            return {category}
+        cat_norm = normalize(category)
+        cat_map: dict[str, int] = {}
+        cursor = self._conn.execute("SELECT category_id, name FROM categories")
+        for cid, cname in cursor.fetchall():
+            cat_map[normalize(cname)] = int(cid)
+        # exact match
+        if cat_norm in cat_map:
+            return {cat_map[cat_norm]}
+        # token overlap: normalize name's tokens intersect category's tokens
+        cat_tokens = set(cat_norm.split())
+        for norm_name, cid in cat_map.items():
+            name_tokens = set(norm_name.split())
+            if cat_tokens & name_tokens:
+                return {cid}
+        return {0}
+
     def _match_score(
         self,
-        norm_term: str,
         tokens: list[str],
         product: Product,
         category_name: str,
-    ) -> int:
-        text = (
-            f"{normalize(product.name)} {normalize(product.description)} {normalize(category_name)}"
-        )
+    ) -> tuple[int, float]:
+        norm_name = normalize(product.name)
+        norm_cat = normalize(category_name)
+        name_tokens = set(norm_name.split())
+        cat_tokens = set(norm_cat.split())
+        all_tokens = name_tokens | cat_tokens
 
-        # Rank 1: all tokens present in normalized text
-        if all(t in text for t in tokens):
-            return 3
+        # Rank 3 check first to compute best similarity
+        best_ratio = 0.0
+        tokens_text = f"{norm_name} {normalize(product.description)} {norm_cat}"
+        for word in tokens_text.split():
+            for tok in tokens:
+                ratio = SequenceMatcher(None, tok, word).ratio()
+                if ratio > best_ratio:
+                    best_ratio = ratio
 
-        # Rank 2: compact comparison
-        compact_term = compact(norm_term)
-        compact_text = compact(text)
-        if compact_term in compact_text:
-            return 2
+        # Rank 3 check first to compute best per-token ratio
+        tokens_text = f"{norm_name} {normalize(product.description)} {norm_cat}"
+        all_tokens_ok = True
+        best_ratio = 0.0
+        for tok in tokens:
+            tok_best = 0.0
+            for word in tokens_text.split():
+                ratio = SequenceMatcher(None, tok, word).ratio()
+                if ratio > tok_best:
+                    tok_best = ratio
+            if tok_best > best_ratio:
+                best_ratio = tok_best
+            if tok_best < SIMILARITY_THRESHOLD:
+                all_tokens_ok = False
 
-        # Rank 3: SequenceMatcher for typos against individual words
-        for word in text.split():
-            if SequenceMatcher(None, compact_term, word).ratio() >= SIMILARITY_THRESHOLD:
-                return 1
+        # Rank 1: every search token matches a word token in name or category (exact)
+        if all(t in all_tokens for t in tokens):
+            return (3, best_ratio)
 
-        return 0
+        # Rank 2: compact of product name contains compact of search term
+        compact_term = compact(" ".join(tokens))
+        compact_name = compact(norm_name)
+        if compact_term and compact_term in compact_name:
+            return (2, best_ratio)
+
+        # Rank 3: each token must have a similar word
+        if all_tokens_ok and best_ratio >= SIMILARITY_THRESHOLD:
+            return (1, best_ratio)
+
+        return (0, 0.0)
 
     @staticmethod
     def _row_to_product(row: sqlite3.Row) -> Product:
@@ -165,6 +202,11 @@ class PromotionRepository:
 
     @staticmethod
     def final_price(product: Product, promotion: Promotion) -> Decimal:
+        if not 0 <= promotion.discount_percent <= 100:
+            msg = (
+                f"discount_percent deve estar entre 0 e 100, recebido {promotion.discount_percent}"
+            )
+            raise ValueError(msg)
         discount = product.price_brl * Decimal(promotion.discount_percent) / Decimal("100")
         return (product.price_brl - discount).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
@@ -218,7 +260,6 @@ class OrderRepository:
 
         return Order(
             order_id=int(row["order_id"]),
-            customer_id=int(row["customer_id"]),
             order_date=date.fromisoformat(row["order_date"]) if row["order_date"] else None,
             status=row["status"],
             total_brl=Decimal(str(row["total_cents"])) / Decimal("100"),

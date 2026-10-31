@@ -34,6 +34,14 @@ def test_search_gd20(repo: ProductRepository) -> None:
     results = repo.search("gd 20")
     names = [p.name for p in results]
     assert any("GD20" in n.replace(" ", "") for n in names)
+    # Não deve trazer Ohana CK-20 (compact do nome contém "ck20", não "gd20")
+    assert not any("CK-20" in n for n in names)
+
+
+def test_search_typo_yamha_not_rozini(repo: ProductRepository) -> None:
+    results = repo.search("yamha")
+    names = [p.name for p in results]
+    assert not any("Rozini" in n for n in names)
 
 
 def test_search_typo_yamha(repo: ProductRepository) -> None:
@@ -72,8 +80,42 @@ def test_search_empty_term(repo: ProductRepository) -> None:
     assert repo.search("   ") == []
 
 
+def test_search_garbage_terms(repo: ProductRepository) -> None:
+    assert repo.search("😀") == []
+    assert repo.search("%") == []
+    assert repo.search("_") == []
+    assert repo.search("!!!") == []
+
+
 def test_search_no_match(repo: ProductRepository) -> None:
     assert repo.search("trombone") == []
+
+
+def test_search_category_by_name(repo: ProductRepository) -> None:
+    by_name = repo.search("violao", category="violões")
+    by_id = repo.search("violao", category=5)
+    assert len(by_name) > 0
+    assert {p.product_id for p in by_name} == {p.product_id for p in by_id}
+
+
+def test_find_by_name_basic(repo: ProductRepository) -> None:
+    results = repo.find_by_name("Nylon")
+    assert len(results) > 0
+    assert any("Nylon" in p.name for p in results)
+
+
+def test_find_by_name_normalized(repo: ProductRepository) -> None:
+    r1 = repo.find_by_name("nYlOn")
+    r2 = repo.find_by_name("Nylon")
+    assert len(r1) == len(r2) > 0
+    assert {p.product_id for p in r1} == {p.product_id for p in r2}
+
+
+def test_find_by_name_wildcards_not_expanded(repo: ProductRepository) -> None:
+    r1 = repo.find_by_name("%")
+    r2 = repo.find_by_name("_")
+    assert len(r1) == 0
+    assert len(r2) == 0
 
 
 def test_get_product(repo: ProductRepository) -> None:

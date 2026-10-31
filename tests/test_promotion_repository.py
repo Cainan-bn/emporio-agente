@@ -44,3 +44,30 @@ def test_final_price(promo_repo: PromotionRepository, product_repo: ProductRepos
     assert promo is not None
     result = promo_repo.final_price(product, promo)
     assert result == Decimal("439.20")
+
+
+def test_final_price_invalid_discount(
+    promo_repo: PromotionRepository, product_repo: ProductRepository
+) -> None:
+    product = product_repo.get(81)
+    assert product is not None
+    from emporio.data.models import Promotion
+
+    bad_promo = Promotion(
+        promotion_id=999,
+        product_id=81,
+        discount_percent=-5,
+        description="inválida",
+        is_active=True,
+    )
+    with pytest.raises(ValueError, match="discount_percent.*entre 0 e 100"):
+        promo_repo.final_price(product, bad_promo)
+    bad_promo2 = Promotion(
+        promotion_id=999,
+        product_id=81,
+        discount_percent=150,
+        description="inválida",
+        is_active=True,
+    )
+    with pytest.raises(ValueError):
+        promo_repo.final_price(product, bad_promo2)

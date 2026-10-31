@@ -108,6 +108,7 @@ def load_database(data_dir: Path | None = None) -> sqlite3.Connection:
     base = data_dir if data_dir is not None else DATA_DIR
 
     conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     conn.executescript(_SCHEMA_SQL)
 

@@ -50,7 +50,6 @@ class OrderItem:
 @dataclass(frozen=True)
 class Order:
     order_id: int
-    customer_id: int
     order_date: date | None
     status: str
     total_brl: Decimal

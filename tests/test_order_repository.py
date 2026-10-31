@@ -63,3 +63,4 @@ def test_order_contains_no_personal_data(repo: OrderRepository) -> None:
     assert not hasattr(order, "email")
     assert not hasattr(order, "phone")
     assert not hasattr(order, "name")
+    assert not hasattr(order, "customer_id")
