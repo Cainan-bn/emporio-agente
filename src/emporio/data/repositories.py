@@ -8,7 +8,7 @@ from difflib import SequenceMatcher
 from emporio.data.models import Category, Order, OrderItem, Product, Promotion
 from emporio.text import compact, normalize
 
-SIMILARITY_THRESHOLD = 0.8
+SIMILARITY_THRESHOLD = 0.85
 _MIN_FUZZY_TOKEN_LEN = 4
 _STOPWORDS_PT = frozenset(
     {
@@ -86,6 +86,8 @@ class ProductRepository:
         if not tokens:
             return []
 
+        compact_full = compact(norm_term)
+
         all_products = self._conn.execute(
             "SELECT p.*, c.name AS category_name "
             "FROM products p "
@@ -97,7 +99,7 @@ class ProductRepository:
         if category is not None:
             cat_ids = self._resolve_category(category)
 
-        scored: list[tuple[int, float, Decimal, int, Product]] = []
+        scored: list[tuple[int, Decimal, int, Product]] = []
         for row in all_products:
             prod = self._row_to_product(row)
             cat_name: str = row["category_name"]
@@ -109,12 +111,12 @@ class ProductRepository:
             if only_available and not prod.is_available:
                 continue
 
-            score, similarity = self._match_score(tokens, prod, cat_name)
+            score, _ = self._match_score(tokens, compact_full, prod, cat_name)
             if score > 0:
-                scored.append((score, similarity, prod.price_brl, prod.product_id, prod))
+                scored.append((score, prod.price_brl, prod.product_id, prod))
 
-        scored.sort(key=lambda x: (-x[0], -x[1], x[2], x[3]))
-        return [p[4] for p in scored[:limit]]
+        scored.sort(key=lambda x: (-x[0], x[1], x[2]))
+        return [p[3] for p in scored[:limit]]
 
     def list_categories(self) -> list[Category]:
         rows = self._conn.execute("SELECT * FROM categories ORDER BY category_id").fetchall()
@@ -148,6 +150,7 @@ class ProductRepository:
     def _match_score(
         self,
         tokens: list[str],
+        compact_term: str,
         product: Product,
         category_name: str,
     ) -> tuple[int, float]:
@@ -161,10 +164,9 @@ class ProductRepository:
         if all(t in all_tokens for t in tokens):
             return (3, 1.0)
 
-        # Rank 2: compact of term in compact of product name
-        compact_term = compact(" ".join(tokens))
+        # Rank 2: compact of full term in compact of product name (only if >= 4 chars)
         compact_name = compact(norm_name)
-        if compact_term and compact_term in compact_name:
+        if len(compact_term) >= 4 and compact_term in compact_name:
             return (2, 0.0)
 
         # Rank 3 (fallback): fuzzy only for tokens >= 4 chars
