@@ -50,6 +50,8 @@ RETRIEVER = PolicyRetriever.from_pdf("data/políticas_da_loja.pdf")
         ("vocês entregam em Ponta Porã?", "5.2", ""),
         ("entregam em Três Lagoas?", "5.2", ""),
         # acessórios (singular e plural) -> seção 1
+        ("vocês vendem cordas e palhetas?", "1", ""),
+        ("tem palheta?", "1", ""),
         ("vocês vendem amplificador?", "1", ""),
         ("vocês trabalham com cordas?", "1", ""),
         # rastreio, promoções, dados pessoais
@@ -60,6 +62,8 @@ RETRIEVER = PolicyRetriever.from_pdf("data/políticas_da_loja.pdf")
         ("comprei e veio com defeito", "4.2", ""),
         ("troca por outra cor", "4.3", ""),
         ("abrem domingo", "2", ""),
+        ("desde quando a loja existe?", "1", "top2"),
+        ("chegou amassado, e agora?", "4.2", "top2"),
     ],
 )
 def test_search_real_queries(query: str, expected: str, note: str) -> None:
