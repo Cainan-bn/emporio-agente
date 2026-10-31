@@ -14,11 +14,12 @@ class DataLoadError(Exception):
 DATA_DIR = Path(__file__).resolve().parent.parent.parent.parent / "data"
 
 
-def find_data_file(suffix: str) -> Path:
-    """Retorna o único arquivo em DATA_DIR cujo nome termina com *suffix*."""
+def find_data_file(suffix: str, data_dir: Path | None = None) -> Path:
+    """Retorna o único arquivo em *data_dir* cujo nome termina com *suffix*."""
+    base = data_dir if data_dir is not None else DATA_DIR
     suffix = suffix.lower()
     matches: list[Path] = []
-    for f in sorted(DATA_DIR.iterdir()):
+    for f in sorted(base.iterdir()):
         if f.name.lower().endswith(suffix):
             matches.append(f)
     if len(matches) > 1:
@@ -26,19 +27,15 @@ def find_data_file(suffix: str) -> Path:
         msg = f"Múltiplos arquivos com sufixo {suffix!r}: {names}"
         raise DataLoadError(msg)
     if not matches:
-        msg = f"Arquivo *{suffix} não encontrado em {DATA_DIR}"
+        msg = f"Arquivo *{suffix} não encontrado em {base}"
         raise DataLoadError(msg)
     return matches[0]
 
 
-def load_csv(name: str) -> list[dict[str, str]]:
-    path = find_data_file(name)
+def load_csv(name: str, data_dir: Path | None = None) -> list[dict[str, str]]:
+    path = find_data_file(name, data_dir=data_dir)
     with open(path, newline="", encoding="utf-8-sig") as f:
         return list(csv.DictReader(f))
-
-
-def _load_csv(name: str) -> list[dict[str, str]]:
-    return load_csv(name)
 
 
 def _to_cents(value: str) -> int:
@@ -108,30 +105,28 @@ CREATE TABLE IF NOT EXISTS promotions (
 
 def load_database(data_dir: Path | None = None) -> sqlite3.Connection:
     """Carrega os CSVs em um banco SQLite em memória e devolve a conexão."""
-    global DATA_DIR  # noqa: PLW0603
-    if data_dir is not None:
-        DATA_DIR = data_dir
+    base = data_dir if data_dir is not None else DATA_DIR
 
     conn = sqlite3.connect(":memory:")
     conn.execute("PRAGMA foreign_keys = ON")
     conn.executescript(_SCHEMA_SQL)
 
     # categories
-    rows = _load_csv("categories.csv")
+    rows = load_csv("categories.csv", data_dir=base)
     conn.executemany(
         "INSERT INTO categories (category_id, name, description) VALUES (?, ?, ?)",
         [(int(r["category_id"]), r["name"], r["description"]) for r in rows],
     )
 
     # customers
-    rows = _load_csv("customers.csv")
+    rows = load_csv("customers.csv", data_dir=base)
     conn.executemany(
         "INSERT INTO customers (customer_id, name, phone, email, city) VALUES (?, ?, ?, ?, ?)",
         [(int(r["customer_id"]), r["name"], r["phone"], r["email"], r["city"]) for r in rows],
     )
 
     # products
-    rows = _load_csv("products.csv")
+    rows = load_csv("products.csv", data_dir=base)
     conn.executemany(
         "INSERT INTO products (product_id, price_cents, name, category_id, "
         "description, stock_quantity, status, specs, created_at) "
@@ -153,7 +148,7 @@ def load_database(data_dir: Path | None = None) -> sqlite3.Connection:
     )
 
     # orders
-    rows = _load_csv("orders.csv")
+    rows = load_csv("orders.csv", data_dir=base)
     conn.executemany(
         "INSERT INTO orders (order_id, customer_id, order_date, status, total_cents, "
         "payment_method, tracking_code, estimated_delivery, notes) "
@@ -175,14 +170,14 @@ def load_database(data_dir: Path | None = None) -> sqlite3.Connection:
     )
 
     # order_items
-    rows = _load_csv("order_items.csv")
+    rows = load_csv("order_items.csv", data_dir=base)
     conn.executemany(
         "INSERT INTO order_items (order_id, quantity, product_id) VALUES (?, ?, ?)",
         [(int(r["order_id"]), int(r["quantity"]), int(r["product_id"])) for r in rows],
     )
 
     # promotions
-    rows = _load_csv("promotions.csv")
+    rows = load_csv("promotions.csv", data_dir=base)
     conn.executemany(
         "INSERT INTO promotions (promotion_id, product_id, discount_percent, "
         "description, is_active) VALUES (?, ?, ?, ?, ?)",
