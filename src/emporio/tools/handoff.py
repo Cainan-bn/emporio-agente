@@ -15,14 +15,14 @@ def _handler(ctx: ToolContext, args: dict) -> dict:
     if len(motivo) > 300:
         motivo = motivo[:300]
 
-    log.info("Handoff motivo len=%d", len(motivo))
+    log.info("handoff motivo_len=%d", len(motivo))
 
     return {
         "encaminhado": True,
         "orientacao": (
-            "Seu caso foi registrado e será analisado por um atendente humano. "
-            "Entre em contato pelo WhatsApp da loja (67) 3321-4500 ou "
-            "pelo e-mail contato@emporiodamusica.com.br. "
+            "Vou te encaminhar para a equipe humana. "
+            "Entre em contato pelo WhatsApp (67) 3321-4500 "
+            "ou e-mail contato@emporiodamusica.com.br. "
             "O retorno ocorre em até 24 horas úteis (Manual §7.3)."
         ),
     }

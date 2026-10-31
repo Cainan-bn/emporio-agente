@@ -13,7 +13,14 @@ def _handler(ctx: ToolContext, args: dict) -> dict:
     order_id = args["numero_pedido"]
     email = args.get("email", "")
 
-    order = ctx.orders.get_for_customer(order_id, email)
+    try:
+        order = ctx.orders.get_for_customer(order_id, email)
+    except (OverflowError, ValueError, TypeError):
+        return {
+            "verificado": False,
+            "mensagem": "Não foi possível verificar este pedido com os dados informados.",
+        }
+
     if order is None:
         return {
             "verificado": False,
