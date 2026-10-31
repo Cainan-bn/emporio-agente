@@ -45,9 +45,19 @@ def _parse_int_env(name: str, default: str) -> int:
         raise ValueError(msg) from None
 
 
+def _parse_temperature() -> float:
+    """LLM_TEMPERATURE precisa estar em [0, 2] (nan/inf/negativos são rejeitados)."""
+    value = _parse_float_env("LLM_TEMPERATURE", "0.2")
+    if not 0.0 <= value <= 2.0:
+        msg = f"LLM_TEMPERATURE deve estar entre 0 e 2, recebido {value!r}"
+        raise ValueError(msg)
+    return value
+
+
 def load_settings(env_file: str | Path | None = None) -> Settings:
     """Carrega configurações a partir de um arquivo .env e variáveis de ambiente."""
-    load_dotenv(dotenv_path=env_file)
+    # só o .env do diretório atual: o padrão do python-dotenv sobe pastas e pegaria um .env alheio
+    load_dotenv(dotenv_path=env_file if env_file is not None else Path.cwd() / ".env")
 
     raw_date = os.getenv("REFERENCE_DATE", "")
     reference_date: date | None = None
@@ -67,7 +77,7 @@ def load_settings(env_file: str | Path | None = None) -> Settings:
         max_tool_iterations=_parse_int_env("MAX_TOOL_ITERATIONS", "6"),
         llm_timeout_seconds=_parse_int_env("LLM_TIMEOUT_SECONDS", "30"),
         llm_max_retries=_parse_int_env("LLM_MAX_RETRIES", "3"),
-        llm_temperature=_parse_float_env("LLM_TEMPERATURE", "0.2"),
+        llm_temperature=_parse_temperature(),
         prompt_version=os.getenv("PROMPT_VERSION", "v1"),
         log_level=os.getenv("LOG_LEVEL", "INFO"),
     )
