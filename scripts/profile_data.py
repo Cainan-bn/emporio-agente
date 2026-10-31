@@ -8,24 +8,7 @@ from typing import Any
 
 import pypdf
 
-DATA_DIR = Path(__file__).resolve().parent.parent / "data"
-
-
-def find_data_file(suffix: str) -> Path:
-    """Retorna o único arquivo em DATA_DIR cujo nome termina com *suffix*."""
-    suffix = suffix.lower()
-    matches: list[Path] = []
-    for f in sorted(DATA_DIR.iterdir()):
-        if f.name.lower().endswith(suffix):
-            matches.append(f)
-    if len(matches) > 1:
-        names = [m.name for m in matches]
-        msg = f"Múltiplos arquivos com sufixo {suffix!r}: {names}"
-        raise FileNotFoundError(msg)
-    if not matches:
-        msg = f"Arquivo *{suffix} não encontrado em {DATA_DIR}"
-        raise FileNotFoundError(msg)
-    return matches[0]
+from emporio.data.loader import find_data_file
 
 
 def load_csv(path: Path) -> list[dict[str, str]]:

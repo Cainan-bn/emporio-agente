@@ -4,10 +4,10 @@ from pathlib import Path
 
 import pytest
 
+from emporio.data.loader import DataLoadError, find_data_file
 from scripts.profile_data import (
     check_order_totals,
     extract_section_titles,
-    find_data_file,
     find_duplicate_values,
     load_csv,
 )
@@ -20,7 +20,7 @@ def test_find_data_file() -> None:
 
 
 def test_find_data_file_not_found() -> None:
-    with pytest.raises(FileNotFoundError):
+    with pytest.raises(DataLoadError):
         find_data_file("nonexistent.csv")
 
 
@@ -30,10 +30,10 @@ def test_find_data_file_multiple_matches(tmp_path: Path, monkeypatch: pytest.Mon
     (data_dir / "a_orders.csv").write_text("x\n1\n")
     (data_dir / "b_orders.csv").write_text("x\n2\n")
 
-    import scripts.profile_data as pm
+    import emporio.data.loader as loader_mod
 
-    monkeypatch.setattr(pm, "DATA_DIR", data_dir)
-    with pytest.raises(FileNotFoundError, match="Múltiplos"):
+    monkeypatch.setattr(loader_mod, "DATA_DIR", data_dir)
+    with pytest.raises(DataLoadError, match="Múltiplos"):
         find_data_file("orders.csv")
 
 
