@@ -118,7 +118,37 @@ def test_settings_is_frozen() -> None:
         max_tool_iterations=6,
         llm_timeout_seconds=30,
         llm_max_retries=3,
+        llm_temperature=0.2,
+        prompt_version="v1",
         log_level="INFO",
     )
     with pytest.raises(AttributeError):
         settings.model_id = "changed"  # type: ignore[misc]
+
+
+def test_llm_temperature_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_env(monkeypatch)
+    env_file = _make_env(tmp_path)
+    settings = load_settings(env_file)
+    assert settings.llm_temperature == 0.2
+
+
+def test_llm_temperature_override(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_env(monkeypatch)
+    env_file = _make_env(tmp_path, "LLM_TEMPERATURE=0.5")
+    settings = load_settings(env_file)
+    assert settings.llm_temperature == 0.5
+
+
+def test_prompt_version_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_env(monkeypatch)
+    env_file = _make_env(tmp_path)
+    settings = load_settings(env_file)
+    assert settings.prompt_version == "v1"
+
+
+def test_prompt_version_override(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_env(monkeypatch)
+    env_file = _make_env(tmp_path, "PROMPT_VERSION=v2")
+    settings = load_settings(env_file)
+    assert settings.prompt_version == "v2"

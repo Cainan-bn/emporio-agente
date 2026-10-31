@@ -8,8 +8,14 @@ version = "0.1.0"
 description = "Agente de atendimento da loja Empório da Música"
 requires-python = ">=3.11"
 
+[project.scripts]
+emporio = "emporio.cli:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+emporio = ["prompts/*.md"]
 
 [tool.ruff]
 line-length = 100
