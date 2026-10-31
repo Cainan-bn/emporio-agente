@@ -6,6 +6,7 @@ import pytest
 
 from emporio.data.loader import load_database
 from emporio.data.repositories import ProductRepository
+from emporio.text import normalize
 
 
 @pytest.fixture
@@ -89,6 +90,67 @@ def test_search_garbage_terms(repo: ProductRepository) -> None:
 
 def test_search_no_match(repo: ProductRepository) -> None:
     assert repo.search("trombone") == []
+    assert repo.search("sax") == []
+    assert repo.search("violino") == []
+    assert repo.search("flauta") == []
+
+
+def test_search_bateria_only_three(repo: ProductRepository) -> None:
+    r = repo.search("bateria")
+    assert len(r) == 3
+    for p in r:
+        assert p.category_id == 3
+
+
+def test_search_teclado_only_three(repo: ProductRepository) -> None:
+    r = repo.search("teclado")
+    assert len(r) == 3
+    for p in r:
+        assert p.category_id == 4
+
+
+def test_search_baixo_only_four(repo: ProductRepository) -> None:
+    r = repo.search("baixo")
+    assert len(r) == 4
+    for p in r:
+        assert "Baixo" in p.name or "Bass" in p.name
+
+
+def test_search_gd20_exact(repo: ProductRepository) -> None:
+    r1 = repo.search("gd20")
+    assert len(r1) == 1
+    assert r1[0].product_id == 95
+
+
+def test_search_gd20_with_space(repo: ProductRepository) -> None:
+    r = repo.search("gd 20")
+    assert len(r) == 1
+    assert r[0].product_id == 95
+
+
+def test_search_yamha_only_yamaha(repo: ProductRepository) -> None:
+    r = repo.search("yamha")
+    for p in r:
+        assert "Yamaha" in p.name or "yamaha" in normalize(p.description)
+
+
+def test_search_stopwords_filtered(repo: ProductRepository) -> None:
+    r1 = repo.search("violoes ate 1000")
+    r2 = repo.search("violoes")
+    assert len(r1) == len(r2) > 0
+    assert {p.product_id for p in r1} == {p.product_id for p in r2}
+
+
+def test_search_numeric_removed(repo: ProductRepository) -> None:
+    r1 = repo.search("yamaha 1000")
+    r2 = repo.search("yamaha")
+    assert len(r1) == len(r2) > 0
+
+
+def test_resolve_category_sopro(repo: ProductRepository) -> None:
+    cats = repo._resolve_category("sopro")
+    assert 6 in cats  # Instrumentos de Sopro (Madeiras)
+    assert 7 in cats  # Instrumentos de Sopro (Metais)
 
 
 def test_search_category_by_name(repo: ProductRepository) -> None:
