@@ -474,3 +474,10 @@ def test_promocoes_filtro_categoria_singular_e_plural(
     result = json.loads(registry.execute("consultar_promocoes", {"produto_ou_categoria": filtro}))
     ids = {int(p["id"]) for p in result["promocoes"]}
     assert ids == esperados
+
+
+@pytest.mark.parametrize("vazio", ["", "   "])
+def test_buscar_produtos_categoria_vazia_e_sem_filtro(registry: ToolRegistry, vazio: str) -> None:
+    com = json.loads(registry.execute("buscar_produtos", {"termo": "natural", "categoria": vazio}))
+    sem = json.loads(registry.execute("buscar_produtos", {"termo": "natural"}))
+    assert com["total"] == sem["total"] > 0

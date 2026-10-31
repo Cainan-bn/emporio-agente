@@ -118,7 +118,61 @@ def test_settings_is_frozen() -> None:
         max_tool_iterations=6,
         llm_timeout_seconds=30,
         llm_max_retries=3,
+        llm_temperature=0.2,
+        prompt_version="v1",
         log_level="INFO",
     )
     with pytest.raises(AttributeError):
         settings.model_id = "changed"  # type: ignore[misc]
+
+
+def test_llm_temperature_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_env(monkeypatch)
+    env_file = _make_env(tmp_path)
+    settings = load_settings(env_file)
+    assert settings.llm_temperature == 0.2
+
+
+def test_llm_temperature_override(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_env(monkeypatch)
+    env_file = _make_env(tmp_path, "LLM_TEMPERATURE=0.5")
+    settings = load_settings(env_file)
+    assert settings.llm_temperature == 0.5
+
+
+def test_prompt_version_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_env(monkeypatch)
+    env_file = _make_env(tmp_path)
+    settings = load_settings(env_file)
+    assert settings.prompt_version == "v1"
+
+
+def test_prompt_version_override(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_env(monkeypatch)
+    env_file = _make_env(tmp_path, "PROMPT_VERSION=v2")
+    settings = load_settings(env_file)
+    assert settings.prompt_version == "v2"
+
+
+def test_nao_carrega_env_de_diretorio_ancestral(tmp_path, monkeypatch) -> None:
+    (tmp_path / ".env").write_text("MODEL_ID=modelo-do-pai\n")
+    filho = tmp_path / "projeto"
+    filho.mkdir()
+    monkeypatch.chdir(filho)
+    monkeypatch.delenv("MODEL_ID", raising=False)
+    assert load_settings().model_id != "modelo-do-pai"
+
+
+def test_carrega_env_do_diretorio_atual(tmp_path, monkeypatch) -> None:
+    (tmp_path / ".env").write_text("MODEL_ID=modelo-local\n")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("MODEL_ID", raising=False)
+    assert load_settings().model_id == "modelo-local"
+    monkeypatch.delenv("MODEL_ID", raising=False)
+
+
+@pytest.mark.parametrize("valor", ["nan", "inf", "-1", "2.5", "abc"])
+def test_temperatura_invalida(valor, monkeypatch) -> None:
+    monkeypatch.setenv("LLM_TEMPERATURE", valor)
+    with pytest.raises(ValueError, match="LLM_TEMPERATURE"):
+        load_settings()
