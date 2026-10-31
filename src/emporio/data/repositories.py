@@ -10,6 +10,35 @@ from emporio.text import compact, normalize
 
 SIMILARITY_THRESHOLD = 0.8
 _MIN_FUZZY_TOKEN_LEN = 4
+_STOPWORDS_PT = frozenset(
+    {
+        "ate",
+        "de",
+        "com",
+        "para",
+        "por",
+        "ou",
+        "e",
+        "um",
+        "uma",
+        "ao",
+        "a",
+        "o",
+        "do",
+        "da",
+        "em",
+        "no",
+        "na",
+        "os",
+        "as",
+        "dos",
+        "das",
+        "nos",
+        "nas",
+        "pelo",
+        "pela",
+    }
+)
 
 
 class ProductRepository:
@@ -52,6 +81,10 @@ class ProductRepository:
         if not norm_term:
             return []
         tokens = norm_term.split()
+        tokens = [t for t in tokens if t not in _STOPWORDS_PT and not t.isdigit()]
+
+        if not tokens:
+            return []
 
         all_products = self._conn.execute(
             "SELECT p.*, c.name AS category_name "
