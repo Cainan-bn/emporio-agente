@@ -89,6 +89,8 @@ _SYNONYM_GROUPS: list[tuple[str, list[str]]] = [
     ),
     ("endereco", ["endereco", "localizacao", "localizacao", "onde fica", "fica"]),
     ("defeito", ["defeito", "defeitos", "quebrado", "quebrou", "estragado", "estragou"]),
+    ("garantia", ["garantia", "garantias", "prazo", "prazos"]),
+    ("loja", ["loja", "vender", "vende", "vendem", "vendas", "acessorio", "acessorios"]),
 ]
 
 _SYNONYM_MAP: dict[str, str] = {}
