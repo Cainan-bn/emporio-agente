@@ -135,16 +135,15 @@ class ProductRepository:
         cursor = self._conn.execute("SELECT category_id, name FROM categories")
         for cid, cname in cursor.fetchall():
             cat_map[normalize(cname)] = int(cid)
-        # exact match
         if cat_norm in cat_map:
             return {cat_map[cat_norm]}
-        # token overlap: normalize name's tokens intersect category's tokens
         cat_tokens = set(cat_norm.split())
+        result: set[int] = set()
         for norm_name, cid in cat_map.items():
             name_tokens = set(norm_name.split())
             if cat_tokens & name_tokens:
-                return {cid}
-        return {0}
+                result.add(cid)
+        return result if result else {0}
 
     def _match_score(
         self,
