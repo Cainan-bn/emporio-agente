@@ -1,0 +1,49 @@
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass
+from datetime import date
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+
+@dataclass(frozen=True)
+class Settings:
+    """Configurações imutáveis carregadas de variáveis de ambiente."""
+
+    openrouter_api_key: str
+    openrouter_base_url: str
+    model_id: str
+    judge_model_id: str
+    reference_date: date | None
+    max_tool_iterations: int
+    llm_timeout_seconds: int
+    llm_max_retries: int
+    log_level: str
+
+
+def load_settings(env_file: str | Path | None = None) -> Settings:
+    """Carrega configurações a partir de um arquivo .env e variáveis de ambiente."""
+    load_dotenv(dotenv_path=env_file)
+
+    raw_date = os.getenv("REFERENCE_DATE", "")
+    reference_date: date | None = None
+    if raw_date:
+        try:
+            reference_date = date.fromisoformat(raw_date)
+        except ValueError:
+            msg = f"REFERENCE_DATE inválida: {raw_date!r}. Use o formato ISO aaaa-mm-dd."
+            raise ValueError(msg) from None
+
+    return Settings(
+        openrouter_api_key=os.getenv("OPENROUTER_API_KEY", ""),
+        openrouter_base_url=os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"),
+        model_id=os.getenv("MODEL_ID", "anthropic/claude-haiku-5.5"),
+        judge_model_id=os.getenv("JUDGE_MODEL_ID", "anthropic/claude-sonnet-5.5"),
+        reference_date=reference_date,
+        max_tool_iterations=int(os.getenv("MAX_TOOL_ITERATIONS", "6")),
+        llm_timeout_seconds=int(os.getenv("LLM_TIMEOUT_SECONDS", "30")),
+        llm_max_retries=int(os.getenv("LLM_MAX_RETRIES", "3")),
+        log_level=os.getenv("LOG_LEVEL", "INFO"),
+    )
