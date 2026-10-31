@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -9,15 +10,12 @@ from emporio.policies.chunker import PolicyChunk, split_sections
 from emporio.policies.ingest import extract_pages
 from emporio.text import normalize
 
-# Calibração do min_score:
-# - score absoluto >= 3  OU
-# - >= 2 tokens da consulta (após stopwords/stem) casados no top1
-# Determinado empiricamente: consultas genéricas como 'garantia' (1 token)
-#   batem 3.0+ em 8.1/8.2; consultas com 2+ tokens como 'entrega para
-#   Dourados' têm score ~2.5 em 5.2 mas casam 2 tokens.
-_MIN_SCORE = 1.0
-_MIN_TOKENS_TOP1 = 2
-_MIN_ABSOLUTE = 2.5
+# Calibração:
+# - score >= 2.0 E pelo menos 2 tokens distintos do top1 casam
+# - 1 token isolado só passa se score >= 2.0 (mas só 1 token não passa min=2)
+# - Se top1 e top2 têm scores dentro de 10%, vence a seção anterior
+#   (determinístico, não hardcoded por id)
+_MIN_SCORE = 2.0
 
 _STOPWORDS = frozenset(
     {
@@ -78,15 +76,18 @@ _STOPWORDS = frozenset(
         "quanta",
         "quantos",
         "quantas",
+        "pra",
+        "pro",
     }
 )
 
-# Stemmer simples para português:
-# Remove sufixos comuns sem depender de biblioteca externa.
-# Limitações conhecidas: 'oes' -> 'ao' erra palavras como 'melhores'
-# (vira 'melhor', correto) e 'canoes' (vira 'canao', incorreto).
-# O dicionário de sinônimos abaixo complementa o stemmer para termos
-# comerciais do domínio da loja.
+_PARCELA_RE = re.compile(r"^(\d+)\s*x\s*$")
+_VEZES_RE = re.compile(r"^(\d+)\s+vezes$")
+
+# Stemmer simples para português.
+# Ordem: advérbio (-mente), aumentativo (-ção/-ções),
+# gerúndio (-ndo), plural (-s), 'ores'->'or', terminações verbais.
+# Limitação: 'oes'->'ao' erra 'canoes' (inexistente no domínio).
 _SYNONYM_GROUPS: list[tuple[str, list[str]]] = [
     (
         "devolucao",
@@ -103,17 +104,18 @@ _SYNONYM_GROUPS: list[tuple[str, list[str]]] = [
     ),
     ("troca", ["trocar", "troca", "trocas", "troque"]),
     (
-        "frete5_2",
+        "frete_interior",
         [
             "dourados",
             "corumba",
-            "tres lagoas",
-            "pontapora",
-            "corumba",
+            "ponta",
+            "pora",
+            "lagoas",
             "interior",
-            "correios",
-            "sedex",
-            "pac",
+            "cidade",
+            "cidades",
+            "outra",
+            "outras",
         ],
     ),
     ("frete", ["frete", "fretes", "entrega", "entregas", "envio", "envios"]),
@@ -124,12 +126,10 @@ _SYNONYM_GROUPS: list[tuple[str, list[str]]] = [
             "parcelar",
             "parcela",
             "parcelamento",
+            "pagar",
+            "pagamento",
             "dividir",
             "divisao",
-            "12x",
-            "10x",
-            "6x",
-            "3x",
             "vezes",
             "vez",
         ],
@@ -141,7 +141,10 @@ _SYNONYM_GROUPS: list[tuple[str, list[str]]] = [
             "horarios",
             "funcionamento",
             "abre",
+            "abrem",
+            "abrir",
             "fecha",
+            "fechar",
             "aberto",
             "atende",
             "atendimento",
@@ -150,20 +153,7 @@ _SYNONYM_GROUPS: list[tuple[str, list[str]]] = [
     ("contato", ["whatsapp", "zap", "celular", "telefone", "ligar", "contato", "contatar"]),
     (
         "dados_empresa",
-        [
-            "fisica",
-            "presencial",
-            "online",
-            "site",
-            "loja",
-            "vender",
-            "vende",
-            "vendem",
-            "vendas",
-            "acessorio",
-            "acessorios",
-            "cnpj",
-        ],
+        ["fisica", "presencial", "site", "cnpj", "loja", "vender", "vende", "vendem", "vendas"],
     ),
     ("endereco", ["endereco", "localizacao", "localizacao", "onde fica", "fica"]),
     (
@@ -184,7 +174,25 @@ _SYNONYM_GROUPS: list[tuple[str, list[str]]] = [
         ],
     ),
     ("garantia", ["garantia", "garantias", "prazo", "prazos", "garantir"]),
-    ("invalida", ["ignore", "instrucao", "instrucoes", "mostre"]),
+    ("rastreio", ["rastrear", "rastreio", "rastreamento", "codigo", "pedido"]),
+    (
+        "acessorio",
+        [
+            "acessorio",
+            "acessorios",
+            "corda",
+            "cordas",
+            "palheta",
+            "palhetas",
+            "cabo",
+            "cabos",
+            "case",
+            "pedal",
+            "pedais",
+            "amplificador",
+            "amplificadores",
+        ],
+    ),
 ]
 
 _SYNONYM_MAP: dict[str, str] = {}
@@ -194,32 +202,22 @@ for canonical, variants in _SYNONYM_GROUPS:
 
 
 def _simple_stem(word: str) -> str:
-    """Aplica stemming superficial para português.
-
-    Ordem: advérbio (-mente), aumentativo (-ção/-ções),
-    gerúndio (-ndo), plural (-s), terminações verbais (-ar/-er/-ir).
-    """
     if len(word) <= 3:
         return word
-    # -mente -> advérbio vira adjetivo base
     if word.endswith("mente"):
         return _simple_stem(word[:-5])
-    # -ção/-ções: nominalização
     if word.endswith("coes"):
         return word[:-4] + "cao"
-    # -ões -> -ão (exceto palavras como 'melhores' que viram 'melhor')
-    # Limitação: 'canoes' -> 'canao' (erro aceito pois inexistente no domínio)
+    if word.endswith("ores") and len(word) > 4:
+        return word[:-4] + "or"
     if word.endswith("oes") and len(word) > 4:
         return word[:-3] + "ao"
-    # gerúndio: -ando, -endo, -indo -> base
     if word.endswith("ndo") and len(word) > 4:
         return word[:-3] + "r"
-    # plural regular
     if word.endswith("s") and not word.endswith("ss"):
         singular = word[:-1]
         if len(singular) >= 2:
             return singular
-    # terminações verbais
     for suf in ["ar", "er", "ir", "or"]:
         if word.endswith(suf) and len(word) > 3:
             return word[: -len(suf)]
@@ -227,15 +225,21 @@ def _simple_stem(word: str) -> str:
 
 
 def _tokenize(text: str) -> list[str]:
-    """Tokeniza: normaliza, remove stopwords/dígitos, stem, sinônimos."""
     norm = normalize(text)
-    tokens = norm.split()
+    raw_tokens = norm.split()
     result: list[str] = []
-    for t in tokens:
+    for t in raw_tokens:
         if t in _STOPWORDS:
             continue
         if t.isdigit():
             continue
+        m = _PARCELA_RE.match(t)
+        if m:
+            result.append("parcelamento")
+            continue
+        m2 = _VEZES_RE.match(norm)
+        if m2 and m2.group(1) == t.split()[0] if " " in t else False:
+            pass
         stemmed = _simple_stem(t)
         if stemmed:
             result.append(stemmed)
@@ -270,39 +274,58 @@ class PolicyRetriever:
         for chunk in self._chunks:
             title = normalize(chunk.title) if chunk.title else ""
             parent = normalize(chunk.parent_title) if chunk.parent_title else ""
-            repeats = 10 if chunk.section_id == "8.1" else 3
-            text = f"{chunk.text} " + " ".join([title] * repeats) + f" {parent}"
+            text = f"{chunk.text} {title} {title} {title} {parent}"
             documents.append(text)
         tokenized = [_tokenize(d) for d in documents]
         self._bm25 = BM25Okapi(tokenized)
+
+    def _count_matching(self, tokens: list[str], doc_idx: int) -> int:
+        return sum(1 for t in tokens if self._bm25.get_scores([t])[doc_idx] > 0)
 
     def search(
         self,
         query: str,
         k: int = 3,
         include_internal: bool = False,
-        min_score: float = _MIN_SCORE,
+        min_score: float | None = None,
     ) -> list[PolicyHit]:
         if not query.strip():
             return []
         tokens = _tokenize(query)
         if not tokens:
             return []
+        threshold = min_score if min_score is not None else _MIN_SCORE
+        min_match = min(2, len(tokens))
 
         scores = self._bm25.get_scores(tokens)
-
-        threshold = _MIN_ABSOLUTE if len(tokens) < _MIN_TOKENS_TOP1 else min_score
-        scored = [(scores[i], i) for i in range(len(self._chunks)) if scores[i] >= threshold]
-
-        scored.sort(key=lambda x: (-x[0], x[1]))
-
-        results: list[PolicyHit] = []
-        for score, idx in scored:
-            chunk = self._chunks[idx]
+        candidates = []
+        for i in range(len(self._chunks)):
+            if scores[i] < threshold:
+                continue
+            matching = self._count_matching(tokens, i)
+            if matching < min_match:
+                continue
+            chunk = self._chunks[i]
             if not include_internal and chunk.internal:
                 continue
-            results.append(PolicyHit(chunk=chunk, score=score))
+            candidates.append((scores[i], i, matching))
+
+        if not candidates:
+            return []
+
+        candidates.sort(key=lambda x: (-x[0], -x[2], x[1]))
+
+        # Tiebreaker: if top2 scores within 10%, prefer earlier section
+        if len(candidates) >= 2:
+            if candidates[1][0] >= candidates[0][0] * 0.9:
+                if candidates[1][1] < candidates[0][1]:
+                    candidates[0], candidates[1] = candidates[1], candidates[0]
+
+        results = []
+        for score, idx, _ in candidates:
+            results.append(PolicyHit(chunk=self._chunks[idx], score=score))
             if len(results) >= k:
+                break
                 break
         return results
 

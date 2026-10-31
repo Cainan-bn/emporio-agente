@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-INTERNAL_SECTIONS = frozenset({"7", "7.1", "7.2", "7.3", "10"})
+INTERNAL_SECTIONS = frozenset({"7.1", "7.2", "7.3", "10"})
 
 SECTION_PATTERN = re.compile(r"^(\d+(?:\.\d+)?)\.?\s+([A-ZÁ-Ú][^:\n]*[A-Za-zÁ-Úá-ú0-9)])\s*$")
 

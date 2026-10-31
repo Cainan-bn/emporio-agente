@@ -77,7 +77,7 @@ def test_section_2_contains_hours() -> None:
 
 def test_internal_only_expected() -> None:
     internal = {c.section_id for c in CHUNKS if c.internal}
-    assert internal == {"capa", "7", "7.1", "7.2", "7.3", "10"}, f"Got: {internal}"
+    assert internal == {"capa", "7.1", "7.2", "7.3", "10"}, f"Got: {internal}"
 
 
 def test_citation_format() -> None:
