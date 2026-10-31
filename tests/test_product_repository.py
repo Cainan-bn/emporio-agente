@@ -93,6 +93,7 @@ def test_search_no_match(repo: ProductRepository) -> None:
     assert repo.search("sax") == []
     assert repo.search("violino") == []
     assert repo.search("flauta") == []
+    assert repo.search("sopro") == []
 
 
 def test_search_bateria_only_three(repo: ProductRepository) -> None:
@@ -196,3 +197,20 @@ def test_list_categories(repo: ProductRepository) -> None:
     names = [c.name for c in cats]
     assert "Violões" in names
     assert "Ukuleles" in names
+
+
+def test_search_tagma_finds_tagima(repo: ProductRepository) -> None:
+    r = repo.search("tagma")
+    assert any("Tagima" in p.name for p in r)
+
+
+def test_search_gianini_finds_giannini(repo: ProductRepository) -> None:
+    r = repo.search("gianini")
+    assert any("Giannini" in p.name for p in r)
+
+
+def test_search_pedal_behavior(repo: ProductRepository) -> None:
+    """'pedal' pode retornar bateria que menciona pedal, mas nunca um produto 'pedal' avulso."""
+    r = repo.search("pedal")
+    for p in r:
+        assert "pedal" not in p.name.lower()
