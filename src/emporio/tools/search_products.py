@@ -19,7 +19,7 @@ _TOOL_PARAMS = {
 
 def _handler(ctx: ToolContext, args: dict) -> dict:
     termo = args["termo"]
-    categoria = args.get("categoria")
+    categoria = (args.get("categoria") or "").strip() or None  # "" do LLM = sem filtro
     preco_max = args.get("preco_max")
     if preco_max is not None:
         if isinstance(preco_max, float) and math.isinf(preco_max):
