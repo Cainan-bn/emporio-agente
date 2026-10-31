@@ -24,6 +24,42 @@ def test_find_data_file_not_found() -> None:
         find_data_file("nonexistent.csv")
 
 
+def test_find_data_file_multiple_matches(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    (data_dir / "a_orders.csv").write_text("x\n1\n")
+    (data_dir / "b_orders.csv").write_text("x\n2\n")
+
+    import scripts.profile_data as pm
+
+    monkeypatch.setattr(pm, "DATA_DIR", data_dir)
+    with pytest.raises(FileNotFoundError, match="Múltiplos"):
+        find_data_file("orders.csv")
+
+
+def test_pk_duplicates_real_data() -> None:
+    pk_tables = [
+        ("products", "product_id"),
+        ("orders", "order_id"),
+        ("customers", "customer_id"),
+        ("categories", "category_id"),
+        ("promotions", "promotion_id"),
+    ]
+    for table, pk in pk_tables:
+        rows = load_csv(find_data_file(f"{table}.csv"))
+        dups = find_duplicate_values(rows, pk)
+        assert dups == [], f"{table}.{pk} tem duplicatas inesperadas: {dups}"
+
+
+def test_pk_duplicates_tmp_path(tmp_path: Path) -> None:
+    csv_path = tmp_path / "test.csv"
+    csv_path.write_text("id,name\n1,Alice\n2,Bob\n1,Charlie\n")
+    rows = load_csv(csv_path)
+    dups = find_duplicate_values(rows, "id")
+    assert len(dups) == 1
+    assert dups[0][0] == "1"
+
+
 def test_profiles_quantities() -> None:
     products = load_csv(find_data_file("products.csv"))
     assert len(products) == 65
