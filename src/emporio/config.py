@@ -38,9 +38,7 @@ def load_settings(env_file: str | Path | None = None) -> Settings:
 
     return Settings(
         openrouter_api_key=os.getenv("OPENROUTER_API_KEY", ""),
-        openrouter_base_url=os.getenv(
-            "OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"
-        ),
+        openrouter_base_url=os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"),
         model_id=os.getenv("MODEL_ID", "anthropic/claude-haiku-5.5"),
         judge_model_id=os.getenv("JUDGE_MODEL_ID", "anthropic/claude-sonnet-5.5"),
         reference_date=reference_date,
