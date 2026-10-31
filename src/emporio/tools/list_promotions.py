@@ -19,7 +19,7 @@ def _handler(ctx: ToolContext, args: dict) -> dict:
                 "promocoes": [],
                 "aviso": "Não há promoção vigente para o item informado.",
             }
-        cat_ids = ctx.products._resolve_category(filtro)
+        cat_ids = ctx.products.resolve_categories(filtro)
         all_active = ctx.promotions.list_active()
         matched = []
         for promo in all_active:

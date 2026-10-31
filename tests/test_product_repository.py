@@ -149,7 +149,7 @@ def test_search_numeric_removed(repo: ProductRepository) -> None:
 
 
 def test_resolve_category_sopro(repo: ProductRepository) -> None:
-    cats = repo._resolve_category("sopro")
+    cats = repo.resolve_categories("sopro")
     assert 6 in cats  # Instrumentos de Sopro (Madeiras)
     assert 7 in cats  # Instrumentos de Sopro (Metais)
 
