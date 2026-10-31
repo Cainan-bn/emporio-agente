@@ -1,3 +1,27 @@
+"""Busca BM25 sobre as seções do manual de políticas, com citação da seção.
+
+Como funciona (o manual tem ~25 seções, então um índice lexical simples basta — ADR-003):
+
+1. **Tokenização**: `normalize` (sem acento/caixa), remoção de stopwords e *stemming*
+   leve de português (`_stem`).
+2. **Expansão da consulta (só do lado da consulta)**: palavras de cliente que não aparecem
+   no manual ("devolver", "zap", "Dourados", "10x") ganham termos que *aparecem* no manual
+   (`_EXPANSIONS`). Os documentos não são expandidos, para não diluir o ranking.
+3. **Ranking por conceito**: BM25 (`rank_bm25`) calculado por termo da consulta; cada
+   termo contribui **uma vez**, com o melhor entre ele mesmo e suas expansões
+   (`_EXPANSION_WEIGHT`). Assim expandir não infla a pontuação. O título da seção é
+   repetido no documento indexado.
+4. **Corte**: valem só seções com pontuação >= `_MIN_SCORE` e >= `_RELATIVE_CUTOFF` da melhor.
+   Termos genéricos que casam por acaso (ex.: "atendimento") ficam abaixo do corte, enquanto
+   termos específicos do manual (ex.: "cnpj", "jadlog") passam. Calibrado com a tabela de
+   consultas de `tests/test_policy_retriever.py`.
+5. **Desempate determinístico**: pontuações dentro de 5% da melhor desempatam pela ordem
+   do documento (seção anterior primeiro).
+
+A proteção contra vazamento de seções internas é `PolicyChunk.internal` (filtradas por
+padrão), não palavras-chave na consulta.
+"""
+
 from __future__ import annotations
 
 import re
@@ -10,277 +34,164 @@ from emporio.policies.chunker import PolicyChunk, split_sections
 from emporio.policies.ingest import extract_pages
 from emporio.text import normalize
 
-# Calibração:
-# - score >= 2.0 E pelo menos 2 tokens distintos do top1 casam
-# - 1 token isolado só passa se score >= 2.0 (mas só 1 token não passa min=2)
-# - Se top1 e top2 têm scores dentro de 10%, vence a seção anterior
-#   (determinístico, não hardcoded por id)
-_MIN_SCORE = 2.0
+_MIN_SCORE = 1.5
+_RELATIVE_CUTOFF = 0.5
+_EXPANSION_WEIGHT = 1.0
+_TIE_MARGIN = 0.95
+_TITLE_REPEAT = 5
 
 _STOPWORDS = frozenset(
-    {
-        "um",
-        "uma",
-        "uns",
-        "umas",
-        "o",
-        "a",
-        "os",
-        "as",
-        "de",
-        "do",
-        "da",
-        "dos",
-        "das",
-        "em",
-        "no",
-        "na",
-        "nos",
-        "nas",
-        "para",
-        "por",
-        "com",
-        "sem",
-        "sob",
-        "ate",
-        "ou",
-        "e",
-        "mas",
-        "que",
-        "se",
-        "como",
-        "mais",
-        "muito",
-        "bem",
-        "ja",
-        "nao",
-        "sim",
-        "voce",
-        "ele",
-        "ela",
-        "vos",
-        "eu",
-        "tu",
-        "meu",
-        "seu",
-        "num",
-        "pelo",
-        "pela",
-        "pelos",
-        "pelas",
-        "ao",
-        "aos",
-        "qual",
-        "quais",
-        "quanto",
-        "quanta",
-        "quantos",
-        "quantas",
-        "pra",
-        "pro",
-    }
+    "um uma uns umas o a os as de do da dos das em no na nos nas para pra pro por com sem "
+    "sob ate ou e mas que se como mais muito bem ja nao sim voce voces ele ela eu meu minha "
+    "seu sua pelo pela ao aos qual quais quanto quanta quantos quantas posso pode podem "
+    "quero queria gostaria tem ter tenho ha vai ser sao foi dar da so tambem ainda depois "
+    "antes quando onde qual online loja lojas".split()
 )
 
-_PARCELA_RE = re.compile(r"^(\d+)\s*x\s*$")
-_VEZES_RE = re.compile(r"^(\d+)\s+vezes$")
-
-# Stemmer simples para português.
-# Ordem: advérbio (-mente), aumentativo (-ção/-ções),
-# gerúndio (-ndo), plural (-s), 'ores'->'or', terminações verbais.
-# Limitação: 'oes'->'ao' erra 'canoes' (inexistente no domínio).
-_SYNONYM_GROUPS: list[tuple[str, list[str]]] = [
-    (
-        "devolucao",
-        [
-            "devolver",
-            "devolucao",
-            "reembolso",
-            "reembolsar",
-            "cancelar",
-            "cancelamento",
-            "arrependimento",
-            "arrepender",
-        ],
-    ),
-    ("troca", ["trocar", "troca", "trocas", "troque"]),
-    (
-        "frete_interior",
-        [
-            "dourados",
-            "corumba",
-            "ponta",
-            "pora",
-            "lagoas",
-            "interior",
-            "cidade",
-            "cidades",
-            "outra",
-            "outras",
-        ],
-    ),
-    ("frete", ["frete", "fretes", "entrega", "entregas", "envio", "envios"]),
-    ("pix", ["pix", "a vista", "vista"]),
-    (
-        "parcelamento",
-        [
-            "parcelar",
-            "parcela",
-            "parcelamento",
-            "pagar",
-            "pagamento",
-            "dividir",
-            "divisao",
-            "vezes",
-            "vez",
-        ],
-    ),
-    (
-        "horario",
-        [
-            "horario",
-            "horarios",
-            "funcionamento",
-            "abre",
-            "abrem",
-            "abrir",
-            "fecha",
-            "fechar",
-            "aberto",
-            "atende",
-            "atendimento",
-        ],
-    ),
-    ("contato", ["whatsapp", "zap", "celular", "telefone", "ligar", "contato", "contatar"]),
-    (
-        "dados_empresa",
-        ["fisica", "presencial", "site", "cnpj", "loja", "vender", "vende", "vendem", "vendas"],
-    ),
-    ("endereco", ["endereco", "localizacao", "localizacao", "onde fica", "fica"]),
-    (
-        "defeito",
-        [
-            "defeito",
-            "defeitos",
-            "quebrado",
-            "quebrada",
-            "quebrados",
-            "quebradas",
-            "estragado",
-            "estragada",
-            "danificado",
-            "riscado",
-            "quebrou",
-            "estragou",
-        ],
-    ),
-    ("garantia", ["garantia", "garantias", "prazo", "prazos", "garantir"]),
-    ("rastreio", ["rastrear", "rastreio", "rastreamento", "codigo", "pedido"]),
-    (
-        "acessorio",
-        [
-            "acessorio",
-            "acessorios",
-            "corda",
-            "cordas",
-            "palheta",
-            "palhetas",
-            "cabo",
-            "cabos",
-            "case",
-            "pedal",
-            "pedais",
-            "amplificador",
-            "amplificadores",
-        ],
-    ),
-]
-
-_SYNONYM_MAP: dict[str, str] = {}
-for canonical, variants in _SYNONYM_GROUPS:
-    for v in variants:
-        _SYNONYM_MAP[v] = canonical
+_NUMERIC_INSTALLMENT = re.compile(r"^\d+x$")
 
 
-def _simple_stem(word: str) -> str:
+def _stem(word: str) -> str:
+    """Reduz plural, -mente, -ções e terminações verbais/agentivas comuns.
+
+    Limitação conhecida: heurística simples, sem dicionário; 'melhores' -> 'melh'.
+    Aplicada igualmente à indexação e à consulta, então o erro é consistente.
+    """
     if len(word) <= 3:
         return word
-    if word.endswith("mente"):
-        return _simple_stem(word[:-5])
+    if word.endswith("mente") and len(word) > 7:
+        word = word[:-5]
     if word.endswith("coes"):
-        return word[:-4] + "cao"
-    if word.endswith("ores") and len(word) > 4:
-        return word[:-4] + "or"
-    if word.endswith("oes") and len(word) > 4:
-        return word[:-3] + "ao"
-    if word.endswith("ndo") and len(word) > 4:
-        return word[:-3] + "r"
-    if word.endswith("s") and not word.endswith("ss"):
-        singular = word[:-1]
-        if len(singular) >= 2:
-            return singular
-    for suf in ["ar", "er", "ir", "or"]:
-        if word.endswith(suf) and len(word) > 3:
-            return word[: -len(suf)]
+        word = word[:-4] + "cao"
+    elif word.endswith("oes"):
+        word = word[:-3] + "ao"
+    elif word.endswith("ores"):
+        word = word[:-2]
+    elif word.endswith("s") and not word.endswith("ss"):
+        word = word[:-1]
+    for suffix in ("ar", "er", "ir", "or"):
+        if len(word) > 4 and word.endswith(suffix):
+            return word[:-2]
     return word
 
 
-def _tokenize(text: str) -> list[str]:
-    norm = normalize(text)
-    raw_tokens = norm.split()
-    result: list[str] = []
-    for t in raw_tokens:
-        if t in _STOPWORDS:
-            continue
-        if t.isdigit():
-            continue
-        m = _PARCELA_RE.match(t)
-        if m:
-            result.append("parcelamento")
-            continue
-        m2 = _VEZES_RE.match(norm)
-        if m2 and m2.group(1) == t.split()[0] if " " in t else False:
-            pass
-        stemmed = _simple_stem(t)
-        if stemmed:
-            result.append(stemmed)
-        syn = _SYNONYM_MAP.get(t)
-        if syn:
-            result.append(syn)
-    return result
+# "online" e "loja" ficam nas stopwords: "loja" aparece em quase toda seção (baixa informação)
+# e "online" puxava a seção 4.1 ("Compras Online") para perguntas sobre loja física.
+# Palavras do cliente -> termos que aparecem no manual. Chaves e valores passam pelo `_stem`.
+_EXPANSION_GROUPS: tuple[tuple[str, str], ...] = (
+    (
+        "devolver devolucao devolvo reembolso reembolsar cancelar cancelamento desistir "
+        "arrepender arrependi arrependimento estorno",
+        "arrependimento devolucao reembolso",
+    ),
+    ("trocar troca trocas troque", "troca"),
+    (
+        "dourados corumba ponta pora lagoas interior cidade outra outras fora estado",
+        "correios pac sedex jadlog cidades",
+    ),
+    ("frete entrega entregam entregar envio enviar envia", "frete entrega"),
+    ("pix vista", "pix vista desconto"),
+    (
+        "parcelar parcela parcelamento vezes dividir dividido pagar paga pago pagamento "
+        "cartao credito",
+        "parcelamento parcela credito pagamento",
+    ),
+    (
+        "horario abrem abre abrir fecha fechar aberto funcionamento atende expediente "
+        "feriado domingo sabado",
+        "horario funcionamento",
+    ),
+    ("whatsapp zap celular telefone ligar contato contatar email", "telefone whatsapp"),
+    ("fisica presencial endereco localizacao localiza fica rua", "endereco rua cep dados empresa"),
+    (
+        "acumula acumulam acumular acumulativa cumulativa cumulativo somar juntar",
+        "cumulatividade cumulativas",
+    ),
+    ("lgpd privacidade excluir exclusao apagar", "lgpd pessoais exclusao"),
+    ("cnpj razao social", "cnpj razao"),
+    (
+        "defeito defeitos quebrado quebrada quebrados quebradas quebrou estragado estragada "
+        "estragou danificado danificada riscado riscada",
+        "defeito fabricacao",
+    ),
+    ("rastrear rastreio rastreamento codigo", "rastreamento codigo"),
+    (
+        "acessorio acessorios corda palheta cabo case pedal amplificador capa",
+        "acessorios exclusivamente",
+    ),
+)
 
 
-@dataclass
+def _build_expansions() -> dict[str, tuple[str, ...]]:
+    expansions: dict[str, tuple[str, ...]] = {}
+    for keys, values in _EXPANSION_GROUPS:
+        extra = tuple(dict.fromkeys(_stem(v) for v in values.split()))
+        for key in keys.split():
+            expansions[key] = extra
+            expansions.setdefault(_stem(key), extra)
+    return expansions
+
+
+_EXPANSIONS = _build_expansions()
+
+
+def _content_words(text: str) -> list[str]:
+    """Palavras normalizadas sem stopwords e sem números soltos (preço vai em max_price)."""
+    words = []
+    for word in normalize(text).split():
+        if word in _STOPWORDS or word.isdigit():
+            continue
+        words.append(word)
+    return words
+
+
+def _index_tokens(text: str) -> list[str]:
+    return [_stem(w) for w in _content_words(text)]
+
+
+def _query_terms(query: str) -> list[tuple[str, tuple[str, ...]]]:
+    """Cada termo de conteúdo da consulta com seu stem e as expansões."""
+    terms: list[tuple[str, tuple[str, ...]]] = []
+    for word in _content_words(query):
+        if _NUMERIC_INSTALLMENT.match(word):
+            terms.append(("parcelamento", _EXPANSIONS["parcelamento"]))
+            continue
+        extra = _EXPANSIONS.get(word) or _EXPANSIONS.get(_stem(word)) or ()
+        terms.append((_stem(word), extra))
+    return terms
+
+
+@dataclass(frozen=True)
 class PolicyHit:
+    """Trecho de política encontrado, com sua pontuação BM25 (float nativo)."""
+
     chunk: PolicyChunk
     score: float
 
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "score", float(self.score))
-
 
 class PolicyRetriever:
+    """Índice BM25 sobre os fragmentos do manual."""
+
     def __init__(self, chunks: list[PolicyChunk]) -> None:
-        self._chunks = chunks
-        self._build_index()
+        self._chunks = list(chunks)
+        documents = [self._document_tokens(c) for c in self._chunks]
+        self._bm25 = BM25Okapi(documents)
+
+    @staticmethod
+    def _document_tokens(chunk: PolicyChunk) -> list[str]:
+        title = " ".join([chunk.title] * _TITLE_REPEAT)
+        return _index_tokens(f"{chunk.text} {title} {chunk.parent_title or ''}")
 
     @classmethod
     def from_pdf(cls, pdf_path: str | Path) -> PolicyRetriever:
-        pages = extract_pages(pdf_path)
-        chunks = split_sections(pages)
-        return cls(chunks)
+        return cls(split_sections(extract_pages(pdf_path)))
 
-    def _build_index(self) -> None:
-        documents: list[str] = []
-        for chunk in self._chunks:
-            title = normalize(chunk.title) if chunk.title else ""
-            parent = normalize(chunk.parent_title) if chunk.parent_title else ""
-            text = f"{chunk.text} {title} {title} {title} {parent}"
-            documents.append(text)
-        tokenized = [_tokenize(d) for d in documents]
-        self._bm25 = BM25Okapi(tokenized)
+    @property
+    def chunks(self) -> list[PolicyChunk]:
+        return list(self._chunks)
 
-    def _count_matching(self, tokens: list[str], doc_idx: int) -> int:
-        return sum(1 for t in tokens if self._bm25.get_scores([t])[doc_idx] > 0)
+    def get_section(self, section_id: str) -> PolicyChunk | None:
+        return next((c for c in self._chunks if c.section_id == section_id), None)
 
     def search(
         self,
@@ -289,52 +200,37 @@ class PolicyRetriever:
         include_internal: bool = False,
         min_score: float | None = None,
     ) -> list[PolicyHit]:
-        if not query.strip():
+        """Devolve até `k` trechos relevantes, do mais para o menos relevante."""
+        terms = _query_terms(query)
+        if not terms:
             return []
-        tokens = _tokenize(query)
-        if not tokens:
-            return []
-        threshold = min_score if min_score is not None else _MIN_SCORE
-        min_match = min(2, len(tokens))
+        threshold = _MIN_SCORE if min_score is None else min_score
+        scores = self._concept_scores(terms)
 
-        scores = self._bm25.get_scores(tokens)
-        candidates = []
-        for i in range(len(self._chunks)):
-            if scores[i] < threshold:
-                continue
-            matching = self._count_matching(tokens, i)
-            if matching < min_match:
-                continue
-            chunk = self._chunks[i]
-            if not include_internal and chunk.internal:
-                continue
-            candidates.append((scores[i], i, matching))
-
+        candidates = [
+            (scores[i], i)
+            for i, chunk in enumerate(self._chunks)
+            if scores[i] >= threshold and (include_internal or not chunk.internal)
+        ]
         if not candidates:
             return []
+        best = max(score for score, _ in candidates)
+        candidates = [c for c in candidates if c[0] >= best * _RELATIVE_CUTOFF]
+        candidates.sort(key=lambda item: (-item[0], item[1]))
+        # dentro da margem de 5% da melhor vale a ordem do documento (seção anterior primeiro)
+        near_best = sorted(
+            (c for c in candidates if c[0] >= best * _TIE_MARGIN), key=lambda c: c[1]
+        )
+        ordered = near_best + [c for c in candidates if c[0] < best * _TIE_MARGIN]
+        return [PolicyHit(self._chunks[i], score) for score, i in ordered[:k]]
 
-        candidates.sort(key=lambda x: (-x[0], -x[2], x[1]))
-
-        # Tiebreaker: if top2 scores within 10%, prefer earlier section
-        if len(candidates) >= 2:
-            if candidates[1][0] >= candidates[0][0] * 0.9:
-                if candidates[1][1] < candidates[0][1]:
-                    candidates[0], candidates[1] = candidates[1], candidates[0]
-
-        results = []
-        for score, idx, _ in candidates:
-            results.append(PolicyHit(chunk=self._chunks[idx], score=score))
-            if len(results) >= k:
-                break
-                break
-        return results
-
-    def get_section(self, section_id: str) -> PolicyChunk | None:
-        for chunk in self._chunks:
-            if chunk.section_id == section_id:
-                return chunk
-        return None
-
-    @property
-    def chunks(self) -> list[PolicyChunk]:
-        return list(self._chunks)
+    def _concept_scores(self, terms: list[tuple[str, tuple[str, ...]]]) -> list[float]:
+        """Soma, por seção, a melhor pontuação BM25 de cada termo (próprio ou expandido)."""
+        totals = [0.0] * len(self._chunks)
+        for stem, extra in terms:
+            own = self._bm25.get_scores([stem]).tolist()
+            expanded = [self._bm25.get_scores([e]).tolist() for e in extra]
+            for i in range(len(totals)):
+                best_expansion = max((e[i] for e in expanded), default=0.0)
+                totals[i] += max(own[i], _EXPANSION_WEIGHT * best_expansion)
+        return totals
