@@ -2,18 +2,21 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
-from emporio.llm import ChatModel, LLMError
+from emporio.llm import ChatModel, ToolCall
 from emporio.tools.base import ToolRegistry
 
 log = logging.getLogger(__name__)
 
+_MAX_TOOL_CALLS_PER_RESPONSE = 8
+
 _CONTINGENCY = (
     "Desculpe, tive um problema técnico. "
-    "Você pode entrar em contato pelo WhatsApp (67) 3321-4500 "
-    "ou e-mail contato@emporiodamusica.com.br. "
+    "Você pode falar com a equipe pelo WhatsApp (67) 3321-4500, "
+    "pelo telefone (67) 3341-4444 ou pelo e-mail contato@emporiodamusica.com.br. "
     "Uma pessoa da nossa equipe vai te atender em até 24 horas úteis."
 )
 
@@ -33,20 +36,28 @@ class AgentReply:
     fallback: bool = False
 
 
-def _truncate_tool_calls(tc: list) -> list[dict]:
-    result = []
-    for t in tc:
-        result.append(
-            {
-                "id": t.id,
-                "type": "function",
-                "function": {"name": t.name, "arguments": t.arguments},
-            }
-        )
-    return result
+def _serialize_tool_calls(tool_calls: list[ToolCall]) -> list[dict]:
+    return [
+        {
+            "id": tc.id,
+            "type": "function",
+            "function": {"name": tc.name, "arguments": tc.arguments},
+        }
+        for tc in tool_calls
+    ]
+
+
+def _parse_arguments(raw: str) -> dict[str, Any]:
+    try:
+        parsed = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
 
 
 class Agent:
+    """Loop de conversa com *function calling*, histórico e limites de segurança."""
+
     def __init__(
         self,
         model: ChatModel,
@@ -65,104 +76,105 @@ class Agent:
         self._history: list[dict] = []
 
     def reply(self, user_text: str) -> AgentReply:
+        """Responde ao cliente. Nunca levanta: falhas viram a mensagem de contingência."""
         if not user_text.strip():
             return AgentReply(
                 text="Olá! Como posso ajudar? "
-                "Pergunte sobre produtos, pedidos ou políticas da loja.",
-                fallback=False,
+                "Pergunte sobre produtos, pedidos ou políticas da loja."
             )
-
         text = user_text[: self._max_user_chars]
         if len(user_text) > self._max_user_chars:
-            log.info("user_text truncated from %d to %d", len(user_text), self._max_user_chars)
+            log.info("user_text truncado de %d para %d", len(user_text), self._max_user_chars)
 
+        self._trim_history()
+        checkpoint = len(self._history)  # início do turno; falha => volta para cá
         self._history.append({"role": "user", "content": text})
-
-        tool_records: list[ToolCallRecord] = []
-
-        for iteration in range(self._max_iterations):
-            try:
-                turn = self._model.complete(
-                    [{"role": "system", "content": self._system_prompt}] + self._history,
-                    self._registry.schemas(),
-                )
-            except LLMError:
-                self._history.pop()
-                return AgentReply(text=_CONTINGENCY, fallback=True, iterations=iteration + 1)
-
-            if not turn.tool_calls:
-                content = turn.content or _CONTINGENCY
-                self._history.append({"role": "assistant", "content": content})
-                self._trim_history()
-                return AgentReply(
-                    text=content,
-                    tool_calls=tool_records,
-                    iterations=iteration + 1,
-                )
-
-            assistant_msg: dict = {"role": "assistant", "content": turn.content or None}
-            if turn.tool_calls:
-                assistant_msg["tool_calls"] = _truncate_tool_calls(turn.tool_calls)
-            self._history.append(assistant_msg)
-
-            for tcall in turn.tool_calls:
-                try:
-                    raw_args = (
-                        json.loads(tcall.arguments) if isinstance(tcall.arguments, str) else {}
-                    )
-                except json.JSONDecodeError:
-                    raw_args = {}
-                result_str = self._registry.execute(tcall.name, tcall.arguments)
-                try:
-                    result_dict = json.loads(result_str)
-                except json.JSONDecodeError:
-                    result_dict = {"erro": "resposta inválida da ferramenta"}
-
-                tool_records.append(
-                    ToolCallRecord(
-                        name=tcall.name,
-                        arguments=raw_args,
-                        result=result_dict,
-                    )
-                )
-
-                self._history.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": tcall.id,
-                        "content": result_str,
-                    }
-                )
-
-            self._trim_history()
-
-        # Max iterations reached
-        self._history.pop()
-        return AgentReply(text=_CONTINGENCY, fallback=True, iterations=self._max_iterations)
+        records: list[ToolCallRecord] = []
+        try:
+            reply = self._run_turn(records)
+        except BaseException as exc:
+            del self._history[checkpoint:]
+            if isinstance(exc, Exception):
+                log.warning("turno abortado erro=%s", type(exc).__name__)
+                return AgentReply(text=_CONTINGENCY, tool_calls=records, fallback=True)
+            raise  # Ctrl-C etc.: histórico já está consistente
+        if reply is None:
+            del self._history[checkpoint:]
+            return AgentReply(
+                text=_CONTINGENCY,
+                tool_calls=records,
+                iterations=self._max_iterations,
+                fallback=True,
+            )
+        return reply
 
     def reset(self) -> None:
         self._history.clear()
 
+    def _run_turn(self, records: list[ToolCallRecord]) -> AgentReply | None:
+        """Executa o loop de tool calling; `None` se estourar o limite de iterações."""
+        for iteration in range(1, self._max_iterations + 1):
+            started = time.perf_counter()
+            turn = self._model.complete(
+                [{"role": "system", "content": self._system_prompt}] + self._history,
+                self._registry.schemas(),
+            )
+            if not turn.tool_calls:
+                content = (turn.content or "").strip()
+                if not content:
+                    raise ValueError("resposta vazia do modelo")
+                self._history.append({"role": "assistant", "content": content})
+                log.info("iteracoes=%d duracao=%.2fs", iteration, time.perf_counter() - started)
+                return AgentReply(text=content, tool_calls=records, iterations=iteration)
+
+            calls = self._normalize_ids(turn.tool_calls, iteration)
+            self._history.append(
+                {
+                    "role": "assistant",
+                    "content": turn.content or None,
+                    "tool_calls": _serialize_tool_calls(calls),
+                }
+            )
+            for position, call in enumerate(calls):
+                self._run_tool(call, position, records)
+        return None
+
+    def _run_tool(self, call: ToolCall, position: int, records: list[ToolCallRecord]) -> None:
+        if position >= _MAX_TOOL_CALLS_PER_RESPONSE:
+            result_str = json.dumps({"erro": "Muitas ferramentas na mesma resposta"})
+        else:
+            result_str = self._registry.execute(call.name, call.arguments)
+        try:
+            result = json.loads(result_str)
+        except json.JSONDecodeError:
+            result = {"erro": "resposta inválida da ferramenta"}
+        log.info("tool=%s ok=%s", call.name, "erro" not in result)
+        records.append(
+            ToolCallRecord(
+                name=call.name, arguments=_parse_arguments(call.arguments), result=result
+            )
+        )
+        self._history.append({"role": "tool", "tool_call_id": call.id, "content": result_str})
+
+    @staticmethod
+    def _normalize_ids(calls: list[ToolCall], iteration: int) -> list[ToolCall]:
+        """Garante ids únicos e não vazios (a API exige uma resposta `tool` por id)."""
+        seen: set[str] = set()
+        normalized = []
+        for position, call in enumerate(calls):
+            call_id = call.id if call.id and call.id not in seen else f"call_{iteration}_{position}"
+            seen.add(call_id)
+            normalized.append(ToolCall(id=call_id, name=call.name, arguments=call.arguments))
+        return normalized
+
     def _trim_history(self) -> None:
-        if len(self._history) <= self._max_history:
-            return
-        len(self._history) - self._max_history
-        cut = 0
-        for i, msg in enumerate(self._history):
-            if msg["role"] == "user":
-                cut = i
-                break
-            if (
-                msg["role"] == "assistant"
-                and i + 1 < len(self._history)
-                and self._history[i + 1]["role"] == "tool"
-            ):
-                continue
-            cut = i + 1
-        # Ensure we don't cut in the middle of a tool call pair
-        for i in range(cut, len(self._history)):
-            if self._history[i]["role"] == "tool":
-                cut = i + 1
-            else:
-                break
-        self._history = self._history[cut:]
+        """Descarta os turnos mais antigos, sempre cortando no início de uma fala do usuário
+        (nunca separa `assistant`/`tool` nem começa o histórico por `tool`)."""
+        while len(self._history) > self._max_history:
+            start = next(
+                (i for i in range(1, len(self._history)) if self._history[i]["role"] == "user"),
+                None,
+            )
+            if start is None:
+                return
+            del self._history[:start]
