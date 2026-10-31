@@ -76,7 +76,7 @@ def check_order_totals(
     items: list[dict[str, str]],
     products: list[dict[str, str]],
 ) -> list[dict[str, Any]]:
-    """Retorna pedidos cujo total_brl difere da soma qty × preço atual."""
+    """Retorna pedidos com total divergente ou itens com product_id órfão."""
     prices = {p["product_id"]: float(p["price_brl"]) for p in products}
     divergences: list[dict[str, Any]] = []
     item_by_order: dict[str, list[dict[str, str]]] = {}
@@ -85,13 +85,21 @@ def check_order_totals(
     for o in orders:
         oid = o["order_id"].strip()
         expected = 0.0
+        orphan_pids: set[str] = set()
         for it in item_by_order.get(oid, []):
             qty = int(it["quantity"])
             pid = it["product_id"].strip()
-            expected += qty * prices.get(pid, 0.0)
+            if pid not in prices:
+                orphan_pids.add(pid)
+                continue
+            expected += qty * prices[pid]
         actual = float(o["total_brl"])
-        if abs(expected - actual) > 0.01:
-            divergences.append({"order_id": int(oid), "expected": expected, "actual": actual})
+        entry: dict[str, Any] = {"order_id": int(oid), "actual": actual}
+        if orphan_pids:
+            entry["orphan_product_ids"] = sorted(orphan_pids)
+        if abs(expected - actual) > 0.01 or orphan_pids:
+            entry["expected"] = expected
+            divergences.append(entry)
     return divergences
 
 
@@ -189,10 +197,13 @@ def main() -> None:
     print("\n💰 Totais Divergentes (total_brl ≠ soma qty × preço atual)")
     if divergences:
         for d in divergences:
-            print(
+            parts = [
                 f"  Pedido {d['order_id']}: esperado {d['expected']:.2f}, "
                 f"informado {d['actual']:.2f}"
-            )
+            ]
+            if "orphan_product_ids" in d:
+                parts.append(f"  (product_id órfão: {d['orphan_product_ids']})")
+            print("\n".join(parts))
     else:
         print("  Nenhum")
 

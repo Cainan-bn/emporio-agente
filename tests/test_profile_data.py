@@ -60,6 +60,28 @@ def test_pk_duplicates_tmp_path(tmp_path: Path) -> None:
     assert dups[0][0] == "1"
 
 
+def test_check_order_totals_orphan_product_id(tmp_path: Path) -> None:
+    orders_csv = tmp_path / "orders.csv"
+    orders_csv.write_text(
+        "order_id,customer_id,order_date,status,total_brl,payment_method\n"
+        "1,1,2026-01-01,delivered,100,pix\n"
+    )
+    items_csv = tmp_path / "items.csv"
+    items_csv.write_text("order_id,quantity,product_id\n1,1,999\n")
+    products_csv = tmp_path / "products.csv"
+    products_csv.write_text("product_id,price_brl,name\n1,50,Item\n")
+
+    orders = load_csv(orders_csv)
+    items = load_csv(items_csv)
+    products = load_csv(products_csv)
+    divergences = check_order_totals(orders, items, products)
+    assert len(divergences) == 1
+    d = divergences[0]
+    assert d["order_id"] == 1
+    assert "orphan_product_ids" in d
+    assert "999" in d["orphan_product_ids"]
+
+
 def test_profiles_quantities() -> None:
     products = load_csv(find_data_file("products.csv"))
     assert len(products) == 65
