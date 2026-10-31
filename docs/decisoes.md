@@ -48,3 +48,9 @@ Formato: contexto → decisão → alternativas → consequência. Atualizado ao
 ## ADR-010 — Modelo do agente
 - **Decisão (provisória):** `anthropic/claude-haiku-5.5` via OpenRouter (`MODEL_ID`), juiz do eval `anthropic/claude-sonnet-5.5`. Será confirmado/ajustado na fase 6 com base nos resultados do eval.
 - **Alternativas:** `deepseek/deepseek-v4-flash`, `google/gemini-3.x-flash`.
+
+## ADR-011 — Ferramentas: registro próprio, saída JSON em português, cálculo em código
+- **Contexto:** o LLM não deve fazer contas de data/preço nem ver dados pessoais; erros de ferramenta não podem vazar (regra 8).
+- **Decisão:** `ToolRegistry` próprio (sem framework) com schema JSON (formato `tools` da API OpenAI), validação mínima de argumentos e `execute()` que **nunca levanta**: erro → `{"erro": "..."}` genérico, detalhe só no log (sem PII). Valores monetários/datas já formatados em pt-BR; dias decorridos calculados em código a partir de `REFERENCE_DATE`.
+- **Sétima ferramenta:** `consultar_loja()` devolve endereço, horários e **os dois telefones rotulados** (1.2 e 7) por `get_section`, de forma determinística — o retriever BM25 não garante trazer a seção 7 para "telefone" (recomendação do QA na fase 3). Mantém `consultar_politicas` para o resto.
+- **Consequência:** a decisão de elegibilidade de devolução continua do LLM (com a política citada), mas a aritmética de datas é determinística.

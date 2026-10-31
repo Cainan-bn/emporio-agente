@@ -41,6 +41,20 @@ _STOPWORDS_PT = frozenset(
 )
 
 
+def _singular(token: str) -> str:
+    """Singular aproximado de um token já normalizado ('violoes' -> 'violao')."""
+    if token.endswith("oes") and len(token) > 4:
+        return token[:-3] + "ao"
+    if token.endswith("s") and len(token) > 3:
+        return token[:-1]
+    return token
+
+
+def _category_tokens(text: str) -> set[str]:
+    """Tokens de categoria no singular; ignora palavras de até 2 letras ('e', 'de')."""
+    return {_singular(t) for t in normalize(text).split() if len(t) > 2}
+
+
 class ProductRepository:
     def __init__(self, conn: sqlite3.Connection) -> None:
         self._conn = conn
@@ -83,6 +97,8 @@ class ProductRepository:
         tokens = norm_term.split()
         tokens = [t for t in tokens if t not in _STOPWORDS_PT and not t.isdigit()]
 
+        tokens = [t[:50] for t in tokens[:8]]  # teto: evita custo O(n²) do fuzzy em entrada enorme
+
         if not tokens:
             return []
 
@@ -97,7 +113,7 @@ class ProductRepository:
 
         cat_ids: set[int] | None = None
         if category is not None:
-            cat_ids = self._resolve_category(category)
+            cat_ids = self.resolve_categories(category)
 
         scored: list[tuple[int, Decimal, int, Product]] = []
         for row in all_products:
@@ -129,22 +145,18 @@ class ProductRepository:
             for r in rows
         ]
 
-    def _resolve_category(self, category: str | int) -> set[int]:
+    def resolve_categories(self, category: str | int) -> set[int]:
+        """Resolve nome/termo de categoria em ids, tolerando acento, caixa e plural.
+
+        Compara tokens normalizados e no singular ("violões" ~ "Violões", "ukulele" ~
+        "Ukuleles"). Nenhuma correspondência -> `{0}` (id inexistente), para que a busca
+        devolva vazio em vez de ignorar o filtro.
+        """
         if isinstance(category, int):
             return {category}
-        cat_norm = normalize(category)
-        cat_map: dict[str, int] = {}
+        wanted = _category_tokens(category)
         cursor = self._conn.execute("SELECT category_id, name FROM categories")
-        for cid, cname in cursor.fetchall():
-            cat_map[normalize(cname)] = int(cid)
-        if cat_norm in cat_map:
-            return {cat_map[cat_norm]}
-        cat_tokens = set(cat_norm.split())
-        result: set[int] = set()
-        for norm_name, cid in cat_map.items():
-            name_tokens = set(norm_name.split())
-            if cat_tokens & name_tokens:
-                result.add(cid)
+        result = {int(cid) for cid, cname in cursor.fetchall() if wanted & _category_tokens(cname)}
         return result if result else {0}
 
     def _match_score(
