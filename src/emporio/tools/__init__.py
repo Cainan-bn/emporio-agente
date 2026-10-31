@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import sqlite3
 from datetime import date
+from pathlib import Path
 
-from emporio.data.loader import load_database
+from emporio.data.loader import DATA_DIR, load_database
 from emporio.data.repositories import OrderRepository, ProductRepository, PromotionRepository
 from emporio.policies.retriever import PolicyRetriever
 from emporio.tools.base import ToolContext, ToolRegistry
@@ -20,13 +21,19 @@ def build_registry(
     conn: sqlite3.Connection | None = None,
     policies: PolicyRetriever | None = None,
     today: date | None = None,
+    data_dir: Path | None = None,
 ) -> ToolRegistry:
     if conn is None:
-        conn = load_database()
+        base = data_dir if data_dir is not None else DATA_DIR
+        pdf_path = _find_pdf(base)
+        conn = load_database(base)
+    else:
+        pdf_path = _find_pdf(DATA_DIR)
+
     today = today or date.today()
 
     if policies is None:
-        policies = PolicyRetriever.from_pdf("data/políticas_da_loja.pdf")
+        policies = PolicyRetriever.from_pdf(str(pdf_path))
 
     products = ProductRepository(conn)
     promotions = PromotionRepository(conn)
@@ -51,3 +58,11 @@ def build_registry(
     ]
 
     return ToolRegistry(ctx, tools)
+
+
+def _find_pdf(base: Path) -> Path:
+    for f in sorted(base.iterdir()):
+        if f.suffix.lower() == ".pdf":
+            return f
+    msg = f"PDF não encontrado em {base}"
+    raise FileNotFoundError(msg)

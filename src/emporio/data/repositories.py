@@ -83,6 +83,9 @@ class ProductRepository:
         tokens = norm_term.split()
         tokens = [t for t in tokens if t not in _STOPWORDS_PT and not t.isdigit()]
 
+        if len(tokens) > 8:
+            tokens = tokens[:8]
+
         if not tokens:
             return []
 
