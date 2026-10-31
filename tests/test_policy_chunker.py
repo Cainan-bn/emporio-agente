@@ -15,6 +15,7 @@ EXPECTED_IDS = {
     "2",
     "3",
     "3.1",
+    "4",
     "4.1",
     "4.2",
     "4.3",
@@ -24,6 +25,7 @@ EXPECTED_IDS = {
     "5.3",
     "6.1",
     "6.2",
+    "7",
     "7.1",
     "7.2",
     "7.3",
@@ -75,7 +77,7 @@ def test_section_2_contains_hours() -> None:
 
 def test_internal_only_expected() -> None:
     internal = {c.section_id for c in CHUNKS if c.internal}
-    assert internal == {"7.1", "7.2", "7.3", "10"}, f"Got: {internal}"
+    assert internal == {"capa", "7", "7.1", "7.2", "7.3", "10"}, f"Got: {internal}"
 
 
 def test_citation_format() -> None:
@@ -91,3 +93,11 @@ def test_capa_citation() -> None:
 def test_no_empty_chunks() -> None:
     empty = [c.section_id for c in CHUNKS if not c.text.strip()]
     assert not empty, f"Empty chunks: {empty}"
+
+
+def test_section_7_contains_whatsapp_number() -> None:
+    assert "3321-4500" in BY_ID["7"].text
+
+
+def test_section_1_2_contains_store_phone() -> None:
+    assert "3341-4444" in BY_ID["1.2"].text
