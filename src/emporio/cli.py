@@ -78,23 +78,29 @@ def run_chat(
         if not user_text:
             continue
         if user_text.startswith("/"):
-            _handle_command(user_text[1:], agent, output_fn)
+            if _handle_command(user_text[1:], agent, output_fn):
+                return
             continue
 
-        reply = agent.reply(user_text)
+        try:
+            reply = agent.reply(user_text)
+        except KeyboardInterrupt:
+            output_fn("\n(resposta interrompida)")
+            continue
         if reply.tool_calls and show_tools:
             for tc in reply.tool_calls:
-                args_str = json_dumps_safe(tc.arguments)
+                args_str = json.dumps(tc.arguments, ensure_ascii=False)
                 masked = _mask_email(args_str)
                 output_fn(f"\033[90m🔧 {tc.name}({masked})\033[0m")
         output_fn(f"\nTéo: {reply.text}")
 
 
-def _handle_command(cmd: str, agent: Agent, output_fn: Any) -> None:
+def _handle_command(cmd: str, agent: Agent, output_fn: Any) -> bool:
+    """Executa um comando `/...`; devolve True quando o chat deve terminar."""
     cmd = cmd.strip().lower()
     if cmd in ("sair", "quit", "exit"):
         output_fn("Até logo! 🎶")
-        sys.exit(0)
+        return True
     elif cmd in ("limpar", "clear", "reset"):
         agent.reset()
         output_fn("Histórico limpo!")
@@ -107,11 +113,7 @@ def _handle_command(cmd: str, agent: Agent, output_fn: Any) -> None:
         )
     else:
         output_fn(f"Comando desconhecido: /{cmd}")
-
-
-def json_dumps_safe(obj: Any) -> str:
-
-    return json.dumps(obj, ensure_ascii=False)
+    return False
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -122,7 +124,11 @@ def main(argv: list[str] | None = None) -> int:
 
     logging.basicConfig(level=logging.WARNING)
 
-    settings = load_settings()
+    try:
+        settings = load_settings()
+    except ValueError as exc:  # configuração inválida: mensagem já é amigável (sem segredos)
+        print(f"Erro de configuração: {exc}", file=sys.stderr)
+        return 2
     if not settings.openrouter_api_key:
         print(
             "Erro: OPENROUTER_API_KEY não configurada.\n"
@@ -135,7 +141,10 @@ def main(argv: list[str] | None = None) -> int:
     try:
         agent = build_agent(settings, data_dir=args.data_dir)
     except Exception as exc:
-        print(f"Erro ao iniciar: {exc}", file=sys.stderr)
+        log.warning("falha ao iniciar erro=%s", type(exc).__name__)
+        print(
+            "Erro ao iniciar o atendimento. Verifique os dados e a configuração.", file=sys.stderr
+        )
         return 1
 
     run_chat(agent, show_tools=args.debug)

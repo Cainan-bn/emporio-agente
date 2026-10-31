@@ -23,9 +23,13 @@ class _FakeModel:
         return turn
 
 
+@pytest.fixture(scope="module")
+def registry():
+    return build_registry(today=date(2026, 3, 20))
+
+
 @pytest.fixture
-def agent() -> Agent:
-    registry = build_registry(today=date(2026, 3, 20))
+def agent(registry) -> Agent:
     return Agent(
         model=_FakeModel([AssistantTurn(content="Bem-vindo!", tool_calls=[])]),
         registry=registry,
@@ -41,8 +45,7 @@ def test_mask_email() -> None:
 def test_run_chat_sair(agent: Agent) -> None:
     inputs = iter(["/sair"])
     outputs: list[str] = []
-    with pytest.raises(SystemExit):
-        run_chat(agent, input_fn=lambda _: next(inputs), output_fn=outputs.append)
+    run_chat(agent, input_fn=lambda _: next(inputs), output_fn=outputs.append)
     output_text = "\n".join(outputs)
     assert "Téo" in output_text
 
@@ -50,8 +53,7 @@ def test_run_chat_sair(agent: Agent) -> None:
 def test_run_chat_ajuda(agent: Agent) -> None:
     inputs = iter(["/ajuda", "/sair"])
     outputs: list[str] = []
-    with pytest.raises(SystemExit):
-        run_chat(agent, input_fn=lambda _: next(inputs), output_fn=outputs.append)
+    run_chat(agent, input_fn=lambda _: next(inputs), output_fn=outputs.append)
     output_text = "\n".join(outputs)
     assert "/sair" in output_text
 
@@ -59,8 +61,7 @@ def test_run_chat_ajuda(agent: Agent) -> None:
 def test_run_chat_limpar(agent: Agent) -> None:
     inputs = iter(["/limpar", "/sair"])
     outputs: list[str] = []
-    with pytest.raises(SystemExit):
-        run_chat(agent, input_fn=lambda _: next(inputs), output_fn=outputs.append)
+    run_chat(agent, input_fn=lambda _: next(inputs), output_fn=outputs.append)
     output_text = "\n".join(outputs)
     assert "Histórico" in output_text
 
@@ -75,16 +76,62 @@ def test_run_chat_eof(agent: Agent) -> None:
     assert "Até logo" in output_text
 
 
-def test_main_no_key() -> None:
-    import os
+def test_main_sem_chave_devolve_2(monkeypatch: pytest.MonkeyPatch, capsys, tmp_path) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    assert main([]) == 2
+    err = capsys.readouterr().err
+    assert "OPENROUTER_API_KEY" in err and "Traceback" not in err
 
-    key = os.environ.pop("OPENROUTER_API_KEY", None)
-    try:
-        with pytest.raises(SystemExit):
-            main(["--help"])
-    finally:
-        if key:
-            os.environ["OPENROUTER_API_KEY"] = key
+
+def test_main_config_invalida_devolve_2_sem_traceback(
+    monkeypatch: pytest.MonkeyPatch, capsys, tmp_path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-x")
+    monkeypatch.setenv("LLM_TEMPERATURE", "nan")
+    assert main([]) == 2
+    err = capsys.readouterr().err
+    assert "LLM_TEMPERATURE" in err and "Traceback" not in err and "sk-x" not in err
+
+
+def test_main_ajuda_sai_com_zero() -> None:
+    with pytest.raises(SystemExit) as exc:
+        main(["--help"])
+    assert exc.value.code == 0
+
+
+def test_python_m_emporio_sem_chave_sai_com_codigo_2(tmp_path) -> None:
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    env = {k: v for k, v in os.environ.items() if k != "OPENROUTER_API_KEY"}
+    env["PYTHONPATH"] = str(Path("src").resolve())
+    done = subprocess.run(
+        [sys.executable, "-m", "emporio"],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert done.returncode == 2
+    assert "Traceback" not in done.stderr
+
+
+class _CtrlCModel:
+    def complete(self, messages, tools):
+        raise KeyboardInterrupt
+
+
+def test_ctrl_c_durante_resposta_nao_derruba_o_chat(registry) -> None:
+    agent = Agent(_CtrlCModel(), registry, "sys", max_iterations=2)
+    inputs = iter(["oi", "/sair"])
+    outputs: list[str] = []
+    run_chat(agent, input_fn=lambda _: next(inputs), output_fn=outputs.append)
+    assert any("interrompida" in o for o in outputs)
 
 
 def test_build_agent_integration() -> None:

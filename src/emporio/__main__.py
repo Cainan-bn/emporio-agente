@@ -1,3 +1,3 @@
 from emporio.cli import main
 
-main()
+raise SystemExit(main())
