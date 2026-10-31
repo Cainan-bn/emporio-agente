@@ -1,40 +1,36 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import pytest
+from openai import APIConnectionError, APIStatusError, APITimeoutError, RateLimitError
 
 from emporio.config import Settings
 from emporio.llm import AssistantTurn, LLMError, OpenRouterClient, ToolCall
 
 
-class _FakeChoice:
-    def __init__(self, content: str | None, tool_calls: list | None, finish: str = "stop"):
-        self.finish_reason = finish
+class _Stub:
+    """Objeto simples com atributos arbitrários (fake de resposta/requisição HTTP)."""
 
-        class _Msg:
-            content = content
-            tool_calls = tool_calls
-
-        self.message = _Msg()
+    def __init__(self, **attrs: Any) -> None:
+        self.__dict__.update(attrs)
 
 
-class _FakeTC:
-    def __init__(self, name: str, args: str, id: str = "call_1"):
-        self.id = id
-        self.type = "function"
-
-        class _Fn:
-            def __init__(self):
-                self.name = name
-                self.arguments = args
-
-        self.function = _Fn()
+def _http_response(status: int) -> _Stub:
+    return _Stub(status_code=status, headers={}, request=_Stub(method="POST", url="x"))
 
 
-class _FakeResponse:
-    def __init__(self, choices: list | None = None):
-        self.choices = choices
+def _response(content: str | None = "Olá!", tool_calls: list | None = None) -> _Stub:
+    message = _Stub(content=content, tool_calls=tool_calls)
+    return _Stub(choices=[_Stub(message=message)])
+
+
+def _client(settings: Settings, create: Any) -> tuple[OpenRouterClient, list[float]]:
+    sleeps: list[float] = []
+    client = OpenRouterClient(settings, sleep_fn=sleeps.append, random_fn=lambda: 0.5)
+    client._client.chat.completions.create = create
+    return client, sleeps
 
 
 @pytest.fixture
@@ -78,102 +74,86 @@ def test_llm_error_message() -> None:
     assert "sk-test" not in str(err)
 
 
-def test_retry_chain_ends_with_llm_error(settings: Settings) -> None:
-    sleeps: list[float] = []
-    client = OpenRouterClient(
-        settings,
-        sleep_fn=lambda s: sleeps.append(s),
-        random_fn=lambda: 0.5,
+def _failing(exc_factory: Any) -> tuple[Any, dict[str, int]]:
+    counter = {"calls": 0}
+
+    def _create(*a: Any, **kw: Any) -> None:
+        counter["calls"] += 1
+        raise exc_factory()
+
+    return _create, counter
+
+
+def test_sucesso_devolve_turno(settings: Settings) -> None:
+    client, sleeps = _client(settings, lambda **kw: _response("Oi!"))
+    turn = client.complete([{"role": "user", "content": "oi"}], [])
+    assert turn == AssistantTurn(content="Oi!", tool_calls=[])
+    assert sleeps == []
+
+
+def test_tool_calls_sao_convertidas(settings: Settings) -> None:
+    function = _Stub(name="consultar_loja", arguments="{}")
+    call = _Stub(id="c1", function=function)
+    client, _ = _client(settings, lambda **kw: _response(None, [call]))
+    turn = client.complete([], [{"type": "function"}])
+    assert turn.tool_calls == [ToolCall(id="c1", name="consultar_loja", arguments="{}")]
+
+
+@pytest.mark.parametrize(
+    "factory",
+    [
+        lambda: RateLimitError("limite", response=_http_response(429), body=None),
+        lambda: APIStatusError("erro", response=_http_response(503), body=None),
+        lambda: APITimeoutError(request=_Stub()),
+        lambda: APIConnectionError(request=_Stub()),
+    ],
+    ids=["429", "503", "timeout", "conexao"],
+)
+def test_falhas_transitorias_repetem_com_backoff(settings: Settings, factory: Any) -> None:
+    create, counter = _failing(factory)
+    client, sleeps = _client(settings, create)
+    with pytest.raises(LLMError):
+        client.complete([], [])
+    assert counter["calls"] == 3  # 1 tentativa + 2 retries
+    assert sleeps == [1.25, 2.5]  # 1 s e 2 s + jitter de 25% (random fixo em 0,5)
+
+
+def test_backoff_tem_teto(settings: Settings) -> None:
+    client, _ = _client(settings, lambda **kw: None)
+    assert client._backoff(10) == 10.0  # teto de 8 s + jitter
+
+
+@pytest.mark.parametrize("status", [400, 401, 403, 404])
+def test_4xx_nao_repete(settings: Settings, status: int) -> None:
+    create, counter = _failing(
+        lambda: APIStatusError("ruim", response=_http_response(status), body={"x": "sk-test"})
     )
-    # Monkey-patch the internal client to always raise 429
-    calls = 0
-
-    def _fake(*a: Any, **kw: Any) -> None:
-        nonlocal calls
-        calls += 1
-        import httpx
-        from openai import RateLimitError
-
-        raise RateLimitError(
-            message="rate limited",
-            response=httpx.Response(429, request=httpx.Request("POST", "https://test.com")),
-            body=None,
-        )
-
-    client._client.chat.completions.create = _fake
-
-    with pytest.raises(LLMError):
-        client.complete([{"role": "user", "content": "hi"}], [])
-
-    assert calls == 3  # initial + 2 retries
-    assert len(sleeps) == 2
-    for s in sleeps:
-        assert 0.5 <= s <= 8.0
-
-
-def test_empty_response_error(settings: Settings) -> None:
-    client = OpenRouterClient(settings)
-    client._client.chat.completions.create = lambda *a, **kw: _FakeResponse(choices=[])
-
-    with pytest.raises(LLMError):
-        client.complete([{"role": "user", "content": "hi"}], [])
-
-
-def test_400_no_retry(settings: Settings) -> None:
-    client = OpenRouterClient(settings)
-    calls = 0
-
-    def _fake(*a: Any, **kw: Any) -> None:
-        nonlocal calls
-        calls += 1
-        import httpx
-        from openai import APIStatusError
-
-        raise APIStatusError(
-            message="bad request",
-            response=httpx.Response(400, request=httpx.Request("POST", "https://test.com")),
-            body=None,
-        )
-
-    client._client.chat.completions.create = _fake
-
-    with pytest.raises(LLMError):
-        client.complete([{"role": "user", "content": "hi"}], [])
-    assert calls == 1  # no retry on 400
-
-
-def test_500_retry(settings: Settings) -> None:
-    client = OpenRouterClient(settings)
-    calls = 0
-
-    def _fake(*a: Any, **kw: Any) -> None:
-        nonlocal calls
-        calls += 1
-        import httpx
-        from openai import APIStatusError
-
-        raise APIStatusError(
-            message="server error",
-            response=httpx.Response(500, request=httpx.Request("POST", "https://test.com")),
-            body=None,
-        )
-
-    client._client.chat.completions.create = _fake
-    with pytest.raises(LLMError):
-        client.complete([{"role": "user", "content": "hi"}], [])
-    assert calls == 3  # initial + 2 retries
-
-
-def test_no_api_key_in_error(settings: Settings, caplog: pytest.LogCaptureFixture) -> None:
-    client = OpenRouterClient(settings)
-    client._client.chat.completions.create = lambda *a, **kw: (_ for _ in ()).throw(
-        Exception("internal error with sk-test-key")
-    )
-    import logging
-
-    with caplog.at_level(logging.WARNING):
-        with pytest.raises(LLMError) as exc:
-            client.complete([], [])
+    client, sleeps = _client(settings, create)
+    with pytest.raises(LLMError) as exc:
+        client.complete([], [])
+    assert counter["calls"] == 1
+    assert sleeps == []
     assert "sk-test" not in str(exc.value)
-    log_text = " ".join(caplog.messages)
-    assert "sk-test" not in log_text
+
+
+def test_resposta_vazia_nao_repete(settings: Settings) -> None:
+    create, counter = _failing(lambda: AssertionError())
+    client, sleeps = _client(settings, lambda **kw: _Stub(choices=[]))
+    with pytest.raises(LLMError):
+        client.complete([], [])
+    assert sleeps == []
+    del create, counter
+
+
+def test_bug_inesperado_nao_repete_e_nao_vaza(
+    settings: Settings, caplog: pytest.LogCaptureFixture
+) -> None:
+    create, counter = _failing(lambda: RuntimeError("segredo sk-test-key /home/x"))
+    client, sleeps = _client(settings, create)
+    with caplog.at_level(logging.WARNING), pytest.raises(LLMError) as exc:
+        client.complete([{"role": "user", "content": "meu email é a@b.com"}], [])
+    assert counter["calls"] == 1
+    assert sleeps == []
+    assert "sk-test" not in str(exc.value)
+    assert "sk-test" not in " ".join(caplog.messages)
+    assert "a@b.com" not in " ".join(caplog.messages)
