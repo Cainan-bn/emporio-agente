@@ -23,6 +23,16 @@ class Settings:
     log_level: str
 
 
+def _parse_int_env(name: str, default: str) -> int:
+    """Converte variável de ambiente para int, com mensagem de erro clara."""
+    raw = os.getenv(name, default)
+    try:
+        return int(raw)
+    except ValueError:
+        msg = f"{name} deve ser um inteiro, recebido {raw!r}"
+        raise ValueError(msg) from None
+
+
 def load_settings(env_file: str | Path | None = None) -> Settings:
     """Carrega configurações a partir de um arquivo .env e variáveis de ambiente."""
     load_dotenv(dotenv_path=env_file)
@@ -42,8 +52,8 @@ def load_settings(env_file: str | Path | None = None) -> Settings:
         model_id=os.getenv("MODEL_ID", "anthropic/claude-haiku-5.5"),
         judge_model_id=os.getenv("JUDGE_MODEL_ID", "anthropic/claude-sonnet-5.5"),
         reference_date=reference_date,
-        max_tool_iterations=int(os.getenv("MAX_TOOL_ITERATIONS", "6")),
-        llm_timeout_seconds=int(os.getenv("LLM_TIMEOUT_SECONDS", "30")),
-        llm_max_retries=int(os.getenv("LLM_MAX_RETRIES", "3")),
+        max_tool_iterations=_parse_int_env("MAX_TOOL_ITERATIONS", "6"),
+        llm_timeout_seconds=_parse_int_env("LLM_TIMEOUT_SECONDS", "30"),
+        llm_max_retries=_parse_int_env("LLM_MAX_RETRIES", "3"),
         log_level=os.getenv("LOG_LEVEL", "INFO"),
     )

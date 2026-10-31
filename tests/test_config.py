@@ -92,6 +92,22 @@ def test_reference_date_garbage(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     assert "not-a-date" in str(excinfo.value)
 
 
+def test_invalid_max_tool_iterations(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MAX_TOOL_ITERATIONS", "abc")
+    with pytest.raises(ValueError) as excinfo:
+        load_settings()
+    assert "MAX_TOOL_ITERATIONS" in str(excinfo.value)
+    assert "abc" in str(excinfo.value)
+
+
+def test_invalid_llm_timeout_seconds(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LLM_TIMEOUT_SECONDS", "xyz")
+    with pytest.raises(ValueError) as excinfo:
+        load_settings()
+    assert "LLM_TIMEOUT_SECONDS" in str(excinfo.value)
+    assert "xyz" in str(excinfo.value)
+
+
 def test_settings_is_frozen() -> None:
     settings = Settings(
         openrouter_api_key="",
