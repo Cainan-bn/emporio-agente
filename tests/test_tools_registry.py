@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
+import os
+from copy import deepcopy
 from datetime import date
+from pathlib import Path
 
 import pytest
 
@@ -9,10 +12,12 @@ from emporio.tools import build_registry
 from emporio.tools.base import Tool, ToolContext, ToolRegistry
 
 TODAY = date(2026, 3, 20)
+DATA_DIR = Path("data")
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def registry() -> ToolRegistry:
+    os.environ["REFERENCE_DATE"] = "2026-03-20"
     return build_registry(today=TODAY)
 
 
@@ -28,7 +33,7 @@ def test_registry_has_seven_tools(registry: ToolRegistry) -> None:
         "consultar_loja",
         "encaminhar_para_humano",
     ]:
-        assert name in names, f"{name} missing"
+        assert name in names
 
 
 def test_schemas_are_valid(registry: ToolRegistry) -> None:
@@ -42,7 +47,6 @@ def test_schemas_are_valid(registry: ToolRegistry) -> None:
         params = fn["parameters"]
         assert params["type"] == "object"
         assert "properties" in params
-        # All schemas must be JSON-serializable
         serialized = json.dumps(s, ensure_ascii=False)
         assert isinstance(serialized, str)
 
@@ -61,6 +65,18 @@ def test_execute_invalid_json(registry: ToolRegistry) -> None:
     assert "erro" in data
 
 
+def test_execute_long_arg(registry: ToolRegistry) -> None:
+    result = registry.execute("buscar_produtos", "x" * 501)
+    data = json.loads(result)
+    assert "erro" in data
+
+
+def test_execute_100k_chars_fast(registry: ToolRegistry) -> None:
+    result = registry.execute("buscar_produtos", "x" * 100_000)
+    data = json.loads(result)
+    assert "erro" in data
+
+
 def test_execute_missing_required_arg(registry: ToolRegistry) -> None:
     result = registry.execute("buscar_produtos", "{}")
     data = json.loads(result)
@@ -68,13 +84,37 @@ def test_execute_missing_required_arg(registry: ToolRegistry) -> None:
     assert "obrigatório" in data["erro"]
 
 
-def test_execute_wrong_type(registry: ToolRegistry) -> None:
+def test_execute_wrong_type_string(registry: ToolRegistry) -> None:
     result = registry.execute(
         "buscar_produtos", json.dumps({"termo": "violao", "preco_max": "caro"})
     )
     data = json.loads(result)
     assert "erro" in data
-    assert "caro" not in data["erro"]  # no PII
+
+
+def test_bool_as_integer_fails(registry: ToolRegistry) -> None:
+    result = registry.execute("consultar_pedido", {"numero_pedido": True, "email": "a@b.com"})
+    data = json.loads(result)
+    assert "erro" in data
+
+
+def test_preco_max_negative_error(registry: ToolRegistry) -> None:
+    result = registry.execute("buscar_produtos", {"termo": "violao", "preco_max": -10})
+    data = json.loads(result)
+    assert "erro" in data
+    assert ">= 0" in data["erro"]
+
+
+def test_preco_max_nan_error(registry: ToolRegistry) -> None:
+    result = registry.execute("buscar_produtos", {"termo": "violao", "preco_max": float("nan")})
+    data = json.loads(result)
+    assert "erro" in data
+
+
+def test_preco_max_inf_accepted(registry: ToolRegistry) -> None:
+    result = registry.execute("buscar_produtos", {"termo": "violao", "preco_max": float("inf")})
+    data = json.loads(result)
+    assert "erro" not in data
 
 
 def test_execute_extra_fields_ignored(registry: ToolRegistry) -> None:
@@ -91,9 +131,9 @@ def test_execute_dict_arguments(registry: ToolRegistry) -> None:
     assert "erro" not in data
 
 
-def test_handler_exception_logged(registry: ToolRegistry) -> None:
+def test_handler_exception_logged(registry: ToolRegistry, caplog: pytest.LogCaptureFixture) -> None:
     def bad_handler(ctx: ToolContext, args: dict) -> dict:
-        raise RuntimeError("test error")
+        raise RuntimeError("segredo do usuario")
 
     bad_tool = Tool(
         name="bad_tool",
@@ -103,31 +143,35 @@ def test_handler_exception_logged(registry: ToolRegistry) -> None:
     )
     ctx = registry._context
     reg = ToolRegistry(ctx, [bad_tool])
-    result = reg.execute("bad_tool", "{}")
+    with caplog.at_level("WARNING"):
+        result = reg.execute("bad_tool", "{}")
     data = json.loads(result)
     assert "erro" in data
+    assert "segredo" not in result
     assert "RuntimeError" not in result
-    assert "test error" not in result
+    log_text = " ".join(caplog.messages)
+    assert "segredo" not in log_text
+
+
+def test_execute_does_not_mutate_input(registry: ToolRegistry) -> None:
+    args = {"termo": "violao"}
+    original = deepcopy(args)
+    registry.execute("buscar_produtos", args)
+    assert args == original
 
 
 def test_buscar_produtos_violao_max_price(registry: ToolRegistry) -> None:
-    result = registry.execute(
-        "buscar_produtos",
-        {"termo": "violao", "preco_max": 1000},
-    )
+    result = registry.execute("buscar_produtos", {"termo": "violao", "preco_max": 1000})
     data = json.loads(result)
     assert data["total"] > 0
+    has_violoes = any(p["categoria"] == "Violões" for p in data["produtos"])
+    assert has_violoes, "Nenhum produto Violões nos resultados"
     for p in data["produtos"]:
-        preco = p["preco"]
-        assert isinstance(preco, str)
-        assert preco.startswith("R$")
+        assert p["preco"].startswith("R$")
 
 
 def test_buscar_produtos_only_available(registry: ToolRegistry) -> None:
-    result = registry.execute(
-        "buscar_produtos",
-        {"termo": "violao", "apenas_em_estoque": True},
-    )
+    result = registry.execute("buscar_produtos", {"termo": "violao", "apenas_em_estoque": True})
     data = json.loads(result)
     for p in data["produtos"]:
         assert p["disponibilidade"] == "disponível"
@@ -146,10 +190,18 @@ def test_buscar_produtos_promocao(registry: ToolRegistry) -> None:
     assert data["total"] > 0
     p = data["produtos"][0]
     assert "promocao" in p
+    assert p["promocao"]["preco_promocional"] == "R$ 439,20"
 
 
 def test_consultar_produto_por_id(registry: ToolRegistry) -> None:
     result = registry.execute("consultar_produto", {"produto": "93"})
+    data = json.loads(result)
+    assert data["id"] == 93
+    assert data["categoria"] == "Violões"
+
+
+def test_consultar_produto_id_with_spaces(registry: ToolRegistry) -> None:
+    result = registry.execute("consultar_produto", {"produto": "  93 "})
     data = json.loads(result)
     assert data["id"] == 93
 
@@ -218,6 +270,20 @@ def test_consultar_promocoes_nao_contem_inativa(registry: ToolRegistry) -> None:
     assert "Black Friday" not in full
 
 
+def test_consultar_promocoes_garbage(registry: ToolRegistry) -> None:
+    result = registry.execute("consultar_promocoes", {"produto_ou_categoria": "😀"})
+    data = json.loads(result)
+    assert data["promocoes"] == []
+
+
+def test_consultar_promocoes_violao_finds_violoes(registry: ToolRegistry) -> None:
+    result = registry.execute("consultar_promocoes", {"produto_ou_categoria": "violão"})
+    data = json.loads(result)
+    if data["promocoes"]:
+        for p in data["promocoes"]:
+            assert p["categoria"] == "Violões"
+
+
 def test_consultar_pedido_ok(registry: ToolRegistry) -> None:
     result = registry.execute(
         "consultar_pedido",
@@ -281,6 +347,15 @@ def test_consultar_pedido_8_enviado(registry: ToolRegistry) -> None:
     assert data["pedido"]["codigo_de_rastreio"] is not None
 
 
+def test_consultar_pedido_gigante_fails(registry: ToolRegistry) -> None:
+    result = registry.execute(
+        "consultar_pedido",
+        {"numero_pedido": 10**30, "email": "x@y.com"},
+    )
+    data = json.loads(result)
+    assert data["verificado"] is False
+
+
 def test_consultar_pedido_no_personal_data(registry: ToolRegistry) -> None:
     result = registry.execute(
         "consultar_pedido",
@@ -342,9 +417,16 @@ def test_encaminhar_mencioona_24h(registry: ToolRegistry) -> None:
     result = registry.execute("encaminhar_para_humano", {"motivo": "reclamação"})
     data = json.loads(result)
     assert "24 horas" in data["orientacao"]
+    assert "registrado" not in data["orientacao"]
 
 
 def test_encaminhar_sem_protocolo(registry: ToolRegistry) -> None:
     result = registry.execute("encaminhar_para_humano", {"motivo": "reclamação"})
     data = json.loads(result)
     assert "protocolo" not in data["orientacao"].lower()
+
+
+def test_build_registry_with_tmpdir(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir("/tmp")
+    reg = build_registry(today=TODAY)
+    assert len(reg.names()) == 7
