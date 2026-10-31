@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import copy
 import json
 import logging
+import math
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
-from decimal import Decimal
 from typing import Any
 
 from emporio.data.repositories import (
@@ -17,6 +18,9 @@ from emporio.formatting import format_brl
 from emporio.policies.retriever import PolicyRetriever
 
 log = logging.getLogger(__name__)
+
+
+_MAX_ARG_LEN = 500
 
 
 @dataclass(frozen=True)
@@ -36,12 +40,14 @@ class Tool:
     handler: Callable[[ToolContext, dict[str, Any]], dict[str, Any]]
 
 
-_JSON_TYPES = {
+_JSON_TYPES: dict[str, type | tuple[type, ...]] = {
     "string": str,
     "integer": int,
     "number": (int, float),
     "boolean": bool,
 }
+
+_NUMERIC_TYPES = (int, float)
 
 
 class ToolRegistry:
@@ -50,19 +56,17 @@ class ToolRegistry:
         self._tools = {t.name: t for t in tools}
 
     def schemas(self) -> list[dict[str, Any]]:
-        result = []
-        for t in self._tools.values():
-            result.append(
-                {
-                    "type": "function",
-                    "function": {
-                        "name": t.name,
-                        "description": t.description,
-                        "parameters": t.parameters,
-                    },
-                }
-            )
-        return result
+        return [
+            {
+                "type": "function",
+                "function": {
+                    "name": t.name,
+                    "description": t.description,
+                    "parameters": t.parameters,
+                },
+            }
+            for t in self._tools.values()
+        ]
 
     def names(self) -> list[str]:
         return list(self._tools.keys())
@@ -71,71 +75,88 @@ class ToolRegistry:
         try:
             tool = self._tools.get(name)
             if tool is None:
-                return json.dumps(
-                    {"erro": f"Ferramenta desconhecida: {name}"},
-                    ensure_ascii=False,
-                )
+                return _err(f"Ferramenta desconhecida: {name}")
 
             if isinstance(arguments, str):
+                if len(arguments) > _MAX_ARG_LEN:
+                    return _err("Texto muito longo nos argumentos")
                 try:
                     args = json.loads(arguments)
                 except json.JSONDecodeError as exc:
-                    return json.dumps(
-                        {"erro": f"JSON inválido nos argumentos: {exc}"},
-                        ensure_ascii=False,
-                    )
+                    return _err(f"JSON inválido nos argumentos: {exc}")
             else:
-                args = arguments
+                args = copy.deepcopy(arguments)
 
             if not isinstance(args, dict):
-                return json.dumps(
-                    {"erro": "Argumentos devem ser um objeto JSON"},
-                    ensure_ascii=False,
-                )
+                return _err("Argumentos devem ser um objeto JSON")
 
             props = tool.parameters.get("properties", {})
             required = tool.parameters.get("required", [])
 
             for key in required:
                 if key not in args or args[key] is None:
-                    return json.dumps(
-                        {"erro": f"Argumento obrigatório ausente: {key}"},
-                        ensure_ascii=False,
-                    )
+                    return _err(f"Argumento obrigatório ausente: {key}")
 
             for key, val in list(args.items()):
                 if key not in props:
                     del args[key]
                     continue
                 schema_type = props[key].get("type")
-                py_type = _JSON_TYPES.get(schema_type)
-                if py_type is not None and val is not None:
+                if schema_type == "boolean" and val is not None:
+                    if not isinstance(val, bool):
+                        return _err(
+                            f"Argumento {key}: esperado {schema_type}, "
+                            f"recebido {type(val).__name__}"
+                        )
+                elif schema_type == "integer":
+                    if isinstance(val, bool):
+                        return _err(
+                            f"Argumento {key}: esperado {schema_type}, "
+                            f"recebido {type(val).__name__}"
+                        )
+                    if not isinstance(val, int):
+                        return _err(
+                            f"Argumento {key}: esperado {schema_type}, "
+                            f"recebido {type(val).__name__}"
+                        )
+                elif schema_type == "number":
+                    if isinstance(val, bool) or not isinstance(val, _NUMERIC_TYPES):
+                        return _err(
+                            f"Argumento {key}: esperado {schema_type}, "
+                            f"recebido {type(val).__name__}"
+                        )
+                    if key in ("preco_max",):
+                        if math.isnan(val) or val < 0:
+                            return _err(f"{key} deve ser um número >= 0")
+                elif schema_type is not None and val is not None:
+                    py_type = _JSON_TYPES.get(schema_type)
                     if not isinstance(val, py_type):
-                        return json.dumps(
-                            {
-                                "erro": f"Argumento {key}: "
-                                f"esperado {schema_type}, "
-                                f"recebido {type(val).__name__}"
-                            },
-                            ensure_ascii=False,
+                        return _err(
+                            f"Argumento {key}: esperado {schema_type}, "
+                            f"recebido {type(val).__name__}"
                         )
 
             result = tool.handler(self._context, args)
             return json.dumps(result, ensure_ascii=False)
         except Exception as exc:
-            log.exception("%s: %s", name, type(exc).__name__)
-            return json.dumps({"erro": "Erro interno ao executar a ferramenta"}, ensure_ascii=False)
+            log.warning("tool=%s erro=%s", name, type(exc).__name__)
+            return _err("Erro interno ao executar a ferramenta")
+
+
+def _err(msg: str) -> str:
+    return json.dumps({"erro": msg}, ensure_ascii=False)
 
 
 def product_summary(
     product: Any,
     promotion: Any | None,
     today: date,
+    category_name: str = "",
 ) -> dict[str, Any]:
     result: dict[str, Any] = {
         "id": product.product_id,
         "nome": product.name,
-        "categoria": "",
+        "categoria": category_name,
         "preco": format_brl(product.price_brl),
     }
 
@@ -153,19 +174,24 @@ def product_summary(
         result["disponibilidade"] = "indisponível (sem estoque)"
 
     if promotion and promotion.is_active:
-        final = format_brl(
-            (product.price_brl * Decimal(1 - promotion.discount_percent / 100)).quantize(
-                Decimal("0.01")
-            )
-        )
+        from emporio.data.repositories import PromotionRepository
+
+        final = PromotionRepository.final_price(product, promotion)
         result["promocao"] = {
             "percentual": f"{promotion.discount_percent}%",
             "descricao": promotion.description,
             "preco_original": format_brl(product.price_brl),
-            "preco_promocional": final,
+            "preco_promocional": format_brl(final),
         }
 
     return result
+
+
+def _cat_name(ctx: ToolContext, category_id: int) -> str:
+    for c in ctx.products.list_categories():
+        if c.category_id == category_id:
+            return c.name
+    return ""
 
 
 def _status_pt(status: str) -> str:
@@ -179,12 +205,11 @@ def _status_pt(status: str) -> str:
 
 
 def _payment_method_pt(method: str) -> str:
-    mapping = {
+    return {
         "pix": "PIX",
         "boleto": "boleto",
         "debit": "débito",
         "credit_3x": "crédito em 3x",
         "credit_6x": "crédito em 6x",
         "credit_12x": "crédito em 12x",
-    }
-    return mapping.get(method, method)
+    }.get(method, method)
