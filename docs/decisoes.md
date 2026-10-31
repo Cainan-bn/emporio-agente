@@ -54,3 +54,8 @@ Formato: contexto → decisão → alternativas → consequência. Atualizado ao
 - **Decisão:** `ToolRegistry` próprio (sem framework) com schema JSON (formato `tools` da API OpenAI), validação mínima de argumentos e `execute()` que **nunca levanta**: erro → `{"erro": "..."}` genérico, detalhe só no log (sem PII). Valores monetários/datas já formatados em pt-BR; dias decorridos calculados em código a partir de `REFERENCE_DATE`.
 - **Sétima ferramenta:** `consultar_loja()` devolve endereço, horários e **os dois telefones rotulados** (1.2 e 7) por `get_section`, de forma determinística — o retriever BM25 não garante trazer a seção 7 para "telefone" (recomendação do QA na fase 3). Mantém `consultar_politicas` para o resto.
 - **Consequência:** a decisão de elegibilidade de devolução continua do LLM (com a política citada), mas a aritmética de datas é determinística.
+
+## ADR-012 — Loop de agente, cliente LLM e prompt versionado
+- **Decisão:** `ChatModel` (Protocol) isola o LLM; `OpenRouterClient` usa o SDK `openai` com `base_url` do OpenRouter, **retry próprio** com backoff exponencial + jitter (429, 5xx, timeout, conexão) e timeout por chamada; o SDK roda com `max_retries=0` para não somar tentativas. `Agent` mantém o histórico, executa *tool calls* pelo `ToolRegistry` e limita iterações (`MAX_TOOL_ITERATIONS`). Falha do LLM ou estouro de iterações → resposta de contingência fixa (sem detalhe técnico) que oferece o atendimento humano. Prompt em arquivo versionado (`prompts/v1.md`, depois `v2.md`) escolhido por `PROMPT_VERSION`.
+- **Alternativas:** LangChain/agents (ADR-001), streaming (YAGNI para CLI).
+- **Consequência:** testes do agente usam um `FakeModel` roteirizado, sem rede; o prompt muda sem tocar no código.
