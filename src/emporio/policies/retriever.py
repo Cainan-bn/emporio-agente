@@ -8,9 +8,9 @@ Como funciona (o manual tem ~25 seções, então um índice lexical simples bast
    no manual ("devolver", "zap", "Dourados", "10x") ganham termos que *aparecem* no manual
    (`_EXPANSIONS`). Os documentos não são expandidos, para não diluir o ranking.
 3. **Ranking por conceito**: BM25 (`rank_bm25`) calculado por termo da consulta; cada
-   termo contribui **uma vez**, com o melhor entre ele mesmo e suas expansões
-   (`_EXPANSION_WEIGHT`). Assim expandir não infla a pontuação. O título da seção é
-   repetido no documento indexado.
+   termo contribui **uma vez**: o melhor entre ele mesmo e suas expansões, mais um reforço
+   (`_BONUS`) do outro quando a seção casa os dois. Assim expandir não infla a pontuação.
+   O título da seção é repetido no documento indexado.
 4. **Corte**: valem só seções com pontuação >= `_MIN_SCORE` e >= `_RELATIVE_CUTOFF` da melhor.
    Termos genéricos que casam por acaso (ex.: "atendimento") ficam abaixo do corte, enquanto
    termos específicos do manual (ex.: "cnpj", "jadlog") passam. Calibrado com a tabela de
@@ -37,15 +37,18 @@ from emporio.text import normalize
 _MIN_SCORE = 1.5
 _RELATIVE_CUTOFF = 0.5
 _EXPANSION_WEIGHT = 1.0
+_BONUS = 0.5
 _TIE_MARGIN = 0.95
 _TITLE_REPEAT = 5
 
+# "online" e "loja" ficam nas stopwords: "loja" aparece em quase toda seção (baixa informação)
+# e "online" puxava a seção 4.1 ("Compras Online") para perguntas sobre loja física.
 _STOPWORDS = frozenset(
     "um uma uns umas o a os as de do da dos das em no na nos nas para pra pro por com sem "
     "sob ate ou e mas que se como mais muito bem ja nao sim voce voces ele ela eu meu minha "
     "seu sua pelo pela ao aos qual quais quanto quanta quantos quantas posso pode podem "
     "quero queria gostaria tem ter tenho ha vai ser sao foi dar da so tambem ainda depois "
-    "antes quando onde qual online loja lojas".split()
+    "antes quando onde online loja lojas".split()
 )
 
 _NUMERIC_INSTALLMENT = re.compile(r"^\d+x$")
@@ -75,8 +78,6 @@ def _stem(word: str) -> str:
     return word
 
 
-# "online" e "loja" ficam nas stopwords: "loja" aparece em quase toda seção (baixa informação)
-# e "online" puxava a seção 4.1 ("Compras Online") para perguntas sobre loja física.
 # Palavras do cliente -> termos que aparecem no manual. Chaves e valores passam pelo `_stem`.
 _EXPANSION_GROUPS: tuple[tuple[str, str], ...] = (
     (
@@ -111,9 +112,11 @@ _EXPANSION_GROUPS: tuple[tuple[str, str], ...] = (
     ("cnpj razao social", "cnpj razao"),
     (
         "defeito defeitos quebrado quebrada quebrados quebradas quebrou estragado estragada "
-        "estragou danificado danificada riscado riscada",
+        "estragou danificado danificada riscado riscada amassado amassada arranhado arranhada "
+        "trincado trincada",
         "defeito fabricacao",
     ),
+    ("fundada fundacao existe existir antiguidade historia", "fundada 2008 anos"),
     ("rastrear rastreio rastreamento codigo", "rastreamento codigo"),
     (
         "acessorio acessorios corda palheta cabo case pedal amplificador capa",
@@ -231,6 +234,7 @@ class PolicyRetriever:
             own = self._bm25.get_scores([stem]).tolist()
             expanded = [self._bm25.get_scores([e]).tolist() for e in extra]
             for i in range(len(totals)):
-                best_expansion = max((e[i] for e in expanded), default=0.0)
-                totals[i] += max(own[i], _EXPANSION_WEIGHT * best_expansion)
+                best_expansion = _EXPANSION_WEIGHT * max((e[i] for e in expanded), default=0.0)
+                # o melhor vale inteiro; o outro reforça (a seção casa a palavra E o conceito)
+                totals[i] += max(own[i], best_expansion) + _BONUS * min(own[i], best_expansion)
         return totals
