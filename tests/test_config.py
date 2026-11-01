@@ -176,3 +176,11 @@ def test_temperatura_invalida(valor, monkeypatch) -> None:
     monkeypatch.setenv("LLM_TEMPERATURE", valor)
     with pytest.raises(ValueError, match="LLM_TEMPERATURE"):
         load_settings()
+
+
+def test_max_tokens_padrao_e_invalido(monkeypatch) -> None:
+    monkeypatch.delenv("LLM_MAX_TOKENS", raising=False)
+    assert load_settings().llm_max_tokens == 1024
+    monkeypatch.setenv("LLM_MAX_TOKENS", "muito")
+    with pytest.raises(ValueError, match="LLM_MAX_TOKENS"):
+        load_settings()

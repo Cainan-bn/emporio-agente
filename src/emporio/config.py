@@ -33,6 +33,7 @@ class Settings:
     llm_temperature: float
     prompt_version: str
     log_level: str
+    llm_max_tokens: int = 1024
 
 
 def _parse_int_env(name: str, default: str) -> int:
@@ -80,4 +81,5 @@ def load_settings(env_file: str | Path | None = None) -> Settings:
         llm_temperature=_parse_temperature(),
         prompt_version=os.getenv("PROMPT_VERSION", "v1"),
         log_level=os.getenv("LOG_LEVEL", "INFO"),
+        llm_max_tokens=_parse_int_env("LLM_MAX_TOKENS", "1024"),
     )

@@ -58,6 +58,7 @@ class OpenRouterClient:
     ) -> None:
         self._model = settings.model_id
         self._temperature = settings.llm_temperature
+        self._max_tokens = settings.llm_max_tokens
         self._max_retries = settings.llm_max_retries
         self._sleep = sleep_fn
         self._random = random_fn
@@ -105,6 +106,8 @@ class OpenRouterClient:
             "model": self._model,
             "messages": messages,
             "temperature": self._temperature,
+            # sem teto o OpenRouter reserva o máximo do modelo e recusa (402) contas com pouco saldo
+            "max_tokens": self._max_tokens,
         }
         if tools:
             kwargs["tools"] = tools

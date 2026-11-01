@@ -157,3 +157,15 @@ def test_bug_inesperado_nao_repete_e_nao_vaza(
     assert "sk-test" not in str(exc.value)
     assert "sk-test" not in " ".join(caplog.messages)
     assert "a@b.com" not in " ".join(caplog.messages)
+
+
+def test_envia_max_tokens_ao_provedor(settings: Settings) -> None:
+    enviados: list[dict] = []
+
+    def _create(**kwargs: Any) -> _Stub:
+        enviados.append(kwargs)
+        return _response("ok")
+
+    client, _ = _client(settings, _create)
+    client.complete([{"role": "user", "content": "oi"}], [])
+    assert enviados[0]["max_tokens"] == settings.llm_max_tokens == 1024
