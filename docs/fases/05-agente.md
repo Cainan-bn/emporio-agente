@@ -27,7 +27,7 @@
 - Teste de integração leve: `build_agent` com `FakeModel` injetável (parâmetro `model=`) usando dados reais: "Qual o endereço?" → modelo falso pede `consultar_loja` → resposta contém "Rua 14 de Maio".
 
 ## Critérios de aceite
-`ruff check .`, `ruff format --check .`, `pytest` verdes em venv limpo e **por commit**: rode o **pytest completo e cole a última linha REAL**; commits separados por assunto, código+teste juntos, <70 col, em português (ex.: `feat(llm): cliente OpenRouter com retry e backoff`, `feat(agente): loop de tool calling com limites`, `feat(cli): chat interativo`); `data/` intocado; sem dependência nova; **não** fazer chamadas reais ao OpenRouter em nenhum teste; nenhum segredo.
+`ruff check .`, `ruff format --check .`, `pytest` verdes em venv limpo e **por commit** (exceção registrada: `e7c7605` da fase 6, ver "Notas de processo" no README): rode o **pytest completo e cole a última linha REAL**; commits separados por assunto, código+teste juntos, <70 col, em português (ex.: `feat(llm): cliente OpenRouter com retry e backoff`, `feat(agente): loop de tool calling com limites`, `feat(cli): chat interativo`); `data/` intocado; sem dependência nova; **não** fazer chamadas reais ao OpenRouter em nenhum teste; nenhum segredo.
 
 ## Fluxo
 Branch `fase/05-agente` existe (com spec, persona, prompt v1 e ADR-012). `git pull`, implemente, push, `gh pr create` (base `main`), avise o Arquiteto. Não faça merge. Nunca force-push.
