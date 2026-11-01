@@ -22,6 +22,7 @@ KNOWN_KEYS = frozenset(
         "deve_conter_algum",
         "nao_deve_conter",
         "nao_deve_conter_palavra",
+        "nao_comeca_com",
         "sem_contingencia",
         "rubrica",
     }
@@ -103,6 +104,10 @@ def run_checks(case: dict[str, Any], trace: Trace) -> CheckResult:
     for word in case.get("nao_deve_conter_palavra", []):
         if contains_word(everything, word):
             result.failures.append(f"resposta contém a palavra proibida {word!r}")
+    opening = norm(final).lstrip(" \"'*_«“")
+    for prefix in case.get("nao_comeca_com", []):
+        if opening.startswith(norm(prefix)):
+            result.failures.append(f"resposta final começa com {prefix!r}")
     if case.get("sem_contingencia") and trace.fallback:
         result.failures.append("o agente caiu na mensagem de contingência")
     return result
