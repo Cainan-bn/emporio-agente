@@ -34,17 +34,21 @@ class Judge:
     def __init__(self, model: ChatModel) -> None:
         self._model = model
 
-    def evaluate(self, rubric: str, transcript: str) -> Verdict:
+    def evaluate(self, rubric: str, transcript: str, attempts: int = 3) -> Verdict:
+        """Pede o veredito; repete se vier vazio/inválido (o juiz às vezes é cortado ou vazio)."""
         messages = [
             {"role": "system", "content": _SYSTEM},
             {"role": "user", "content": f"RUBRICA:\n{rubric.strip()}\n\nCONVERSA:\n{transcript}"},
         ]
-        try:
-            content = self._model.complete(messages, []).content or ""
-            data = _extract_json(content)
-            return Verdict(bool(data["aprovado"]), str(data.get("motivo", "")).strip())
-        except (LLMError, ValueError, KeyError, TypeError) as exc:
-            return Verdict(False, f"juiz indisponível ou resposta inválida ({type(exc).__name__})")
+        last = "sem resposta"
+        for _ in range(attempts):
+            try:
+                content = self._model.complete(messages, []).content or ""
+                data = _extract_json(content)
+                return Verdict(bool(data["aprovado"]), str(data.get("motivo", "")).strip())
+            except (LLMError, ValueError, KeyError, TypeError) as exc:
+                last = type(exc).__name__
+        return Verdict(False, f"juiz indisponível ou resposta inválida ({last})")
 
 
 def format_transcript(turns: list[tuple[str, str, list[tuple[str, dict, dict]]]]) -> str:

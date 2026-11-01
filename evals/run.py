@@ -16,6 +16,8 @@ from emporio.llm import OpenRouterClient  # noqa: E402
 from evals.judge import Judge  # noqa: E402
 from evals.runner import load_cases, now_iso, run_all, summarize, write_report  # noqa: E402
 
+JUDGE_MAX_TOKENS = 3000
+
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Eval do agente Téo")
@@ -54,7 +56,12 @@ def main(argv: list[str] | None = None) -> int:
     agent_model = OpenRouterClient(settings)
     judge = None
     if not args.no_judge:
-        judge_settings = replace(settings, model_id=settings.judge_model_id, llm_temperature=0.0)
+        judge_settings = replace(
+            settings,
+            model_id=settings.judge_model_id,
+            llm_temperature=0.0,
+            llm_max_tokens=JUDGE_MAX_TOKENS,  # o juiz gasta tokens raciocinando antes do JSON
+        )
         judge = Judge(OpenRouterClient(judge_settings))
 
     print(f"Rodando {len(cases)} casos | prompt {settings.prompt_version} | {settings.model_id}")

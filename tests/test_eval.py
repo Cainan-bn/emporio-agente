@@ -96,8 +96,17 @@ def test_judge_parse_e_falha_segura() -> None:
     assert aprovado.evaluate("r", "t").approved
     reprovado = Judge(_Scripted([AssistantTurn('{"aprovado": false, "motivo": "inventou"}', [])]))
     assert not reprovado.evaluate("r", "t").approved
-    lixo = Judge(_Scripted([AssistantTurn("não sei", [])])).evaluate("r", "t")
+    lixo = Judge(_Scripted([AssistantTurn("não sei", [])] * 3)).evaluate("r", "t")
     assert not lixo.approved and "inválida" in lixo.reason
+
+
+def test_juiz_tenta_de_novo_quando_a_resposta_vem_vazia_ou_cortada() -> None:
+    respostas = [
+        AssistantTurn(None, []),
+        AssistantTurn('{"aprovado": tr', []),
+        AssistantTurn('{"aprovado": true, "motivo": "ok"}', []),
+    ]
+    assert Judge(_Scripted(respostas)).evaluate("r", "t").approved
 
 
 def test_run_all_end_to_end_com_modelo_falso(tmp_path: Path) -> None:
