@@ -7,7 +7,7 @@ import pytest
 from openai import APIConnectionError, APIStatusError, APITimeoutError, RateLimitError
 
 from emporio.config import Settings
-from emporio.llm import AssistantTurn, LLMError, OpenRouterClient, ToolCall
+from emporio.llm import AssistantTurn, LLMError, OpenCodeClient, ToolCall
 
 
 class _Stub:
@@ -26,9 +26,9 @@ def _response(content: str | None = "Olá!", tool_calls: list | None = None) -> 
     return _Stub(choices=[_Stub(message=message)])
 
 
-def _client(settings: Settings, create: Any) -> tuple[OpenRouterClient, list[float]]:
+def _client(settings: Settings, create: Any) -> tuple[OpenCodeClient, list[float]]:
     sleeps: list[float] = []
-    client = OpenRouterClient(settings, sleep_fn=sleeps.append, random_fn=lambda: 0.5)
+    client = OpenCodeClient(settings, sleep_fn=sleeps.append, random_fn=lambda: 0.5)
     client._client.chat.completions.create = create
     return client, sleeps
 
@@ -36,8 +36,8 @@ def _client(settings: Settings, create: Any) -> tuple[OpenRouterClient, list[flo
 @pytest.fixture
 def settings() -> Settings:
     return Settings(
-        openrouter_api_key="sk-test",
-        openrouter_base_url="https://openrouter.ai/api/v1",
+        opencode_api_key="sk-test",
+        opencode_base_url="https://opencode.ai/inference/go/openai/v1",
         model_id="test-model",
         judge_model_id="judge",
         reference_date=None,
@@ -50,7 +50,7 @@ def settings() -> Settings:
     )
 
 
-def test_openrouter_client_import() -> None:
+def test_opencode_client_import() -> None:
     from emporio.llm import ChatModel
 
     assert ChatModel is not None
@@ -157,3 +157,30 @@ def test_bug_inesperado_nao_repete_e_nao_vaza(
     assert "sk-test" not in str(exc.value)
     assert "sk-test" not in " ".join(caplog.messages)
     assert "a@b.com" not in " ".join(caplog.messages)
+
+
+def test_envia_max_tokens_ao_provedor(settings: Settings) -> None:
+    enviados: list[dict] = []
+
+    def _create(**kwargs: Any) -> _Stub:
+        enviados.append(kwargs)
+        return _response("ok")
+
+    client, _ = _client(settings, _create)
+    client.complete([{"role": "user", "content": "oi"}], [])
+    assert enviados[0]["max_tokens"] == settings.llm_max_tokens == 1024
+
+
+def test_client_sends_session_header_and_user_agent(settings: Settings) -> None:
+    client = OpenCodeClient(settings)
+    headers = client._client.default_headers
+    assert headers["x-opencode-session"]
+    assert headers["User-Agent"].startswith("emporio-agente/")
+
+
+def test_session_is_stable_per_client_and_new_per_conversation(settings: Settings) -> None:
+    client = OpenCodeClient(settings)
+    first = client._client.default_headers["x-opencode-session"]
+    assert client._client.default_headers["x-opencode-session"] == first
+    other = client.for_conversation()
+    assert other._client.default_headers["x-opencode-session"] != first

@@ -22,8 +22,8 @@ def _parse_float_env(name: str, default: str) -> float:
 class Settings:
     """Configurações imutáveis carregadas de variáveis de ambiente."""
 
-    openrouter_api_key: str
-    openrouter_base_url: str
+    opencode_api_key: str
+    opencode_base_url: str
     model_id: str
     judge_model_id: str
     reference_date: date | None
@@ -33,6 +33,7 @@ class Settings:
     llm_temperature: float
     prompt_version: str
     log_level: str
+    llm_max_tokens: int = 1024
 
 
 def _parse_int_env(name: str, default: str) -> int:
@@ -69,10 +70,12 @@ def load_settings(env_file: str | Path | None = None) -> Settings:
             raise ValueError(msg) from None
 
     return Settings(
-        openrouter_api_key=os.getenv("OPENROUTER_API_KEY", ""),
-        openrouter_base_url=os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"),
-        model_id=os.getenv("MODEL_ID", "anthropic/claude-haiku-5.5"),
-        judge_model_id=os.getenv("JUDGE_MODEL_ID", "anthropic/claude-sonnet-5.5"),
+        opencode_api_key=os.getenv("OPENCODE_API_KEY", ""),
+        opencode_base_url=os.getenv(
+            "OPENCODE_BASE_URL", "https://opencode.ai/inference/go/openai/v1"
+        ),
+        model_id=os.getenv("MODEL_ID", "deepseek-v4.1-flash"),
+        judge_model_id=os.getenv("JUDGE_MODEL_ID", "deepseek-v4.1-flash"),
         reference_date=reference_date,
         max_tool_iterations=_parse_int_env("MAX_TOOL_ITERATIONS", "6"),
         llm_timeout_seconds=_parse_int_env("LLM_TIMEOUT_SECONDS", "30"),
@@ -80,4 +83,5 @@ def load_settings(env_file: str | Path | None = None) -> Settings:
         llm_temperature=_parse_temperature(),
         prompt_version=os.getenv("PROMPT_VERSION", "v1"),
         log_level=os.getenv("LOG_LEVEL", "INFO"),
+        llm_max_tokens=_parse_int_env("LLM_MAX_TOKENS", "1024"),
     )

@@ -45,3 +45,15 @@ def test_nonexistent_version() -> None:
 def test_empty_version() -> None:
     with pytest.raises(PromptNotFoundError):
         load_system_prompt("", date.today())
+
+
+@pytest.mark.parametrize("version", ["v1", "v2"])
+def test_every_version_has_today_and_key_rules(version: str) -> None:
+    prompt = load_system_prompt(version, date(2026, 3, 20))
+    assert "20/03/2026" in prompt and "{hoje}" not in prompt
+    assert "Nunca invente" in prompt and "Privacidade" in prompt
+
+
+def test_v2_never_confirms_exchange_before_review() -> None:
+    prompt = load_system_prompt("v2", date(2026, 3, 20))
+    assert "nunca confirme a troca" in prompt

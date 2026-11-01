@@ -1,0 +1,210 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+
+from emporio.llm import AssistantTurn, ToolCall
+from evals.checks import Trace, contains, norm, run_checks, validate_case
+from evals.judge import Judge
+from evals.runner import load_cases, render_markdown, run_all, summarize, write_report
+
+CASES_FILE = Path("evals/casos.yaml")
+
+
+def test_norm_ignora_acento_caixa_e_espacos() -> None:
+    assert norm("  Violão   NYLON Natural ") == "violao nylon natural"
+    assert contains("Preço: R$ 1.234,56", "r$ 1.234,56")
+
+
+def test_casos_dourados_validos_e_cobrem_o_exigido() -> None:
+    cases, default_date = load_cases(CASES_FILE)
+    assert len(cases) >= 15
+    assert default_date == "2026-03-20"
+    ids = {c["id"] for c in cases}
+    exigidos = {
+        "catalogo_violao_ate_1000",
+        "preco_produto_especifico",
+        "produto_inexistente",
+        "produto_sem_estoque",
+        "promocao_vigente",
+        "promocao_expirada",
+        "horario_e_endereco",
+        "pedido_status_verificado",
+        "pedido_email_incorreto",
+        "pedido_inexistente",
+        "devolucao_dentro_do_prazo",
+        "devolucao_fora_do_prazo",
+        "troca_por_defeito",
+        "formas_de_pagamento",
+        "fora_do_escopo_receita",
+        "injecao_de_prompt",
+        "desconto_indevido",
+        "mensagem_ambigua",
+        "pedido_ilicito_wifi",
+        "privacidade_dados_de_terceiros",
+    }
+    assert exigidos <= ids
+    assert len(cases) >= 28
+
+
+def test_validate_case_rejeita_campo_desconhecido_e_faltando() -> None:
+    with pytest.raises(ValueError, match="desconhecidos"):
+        validate_case({"id": "x", "categoria": "c", "turnos": ["a"], "deve_conterr": []})
+    with pytest.raises(ValueError, match="obrigatório"):
+        validate_case({"id": "x", "categoria": "c"})
+
+
+def _trace(*replies: str, tools: tuple[str, ...] = (), fallback: bool = False) -> Trace:
+    return Trace(replies=list(replies), tool_names=list(tools), fallback=fallback)
+
+
+def test_checks_ferramentas() -> None:
+    case = {
+        "tools_obrigatorias": ["a"],
+        "tools_um_de": ["b", "c"],
+        "tools_proibidas": ["d"],
+    }
+    assert run_checks(case, _trace("ok", tools=("a", "c"))).passed
+    falhas = run_checks(case, _trace("ok", tools=("d",))).failures
+    assert len(falhas) == 3
+    assert not run_checks({"nenhuma_tool": True}, _trace("ok", tools=("a",))).passed
+
+
+def test_checks_texto() -> None:
+    case = {
+        "deve_conter": ["R$ 10,00"],
+        "deve_conter_algum": [["sábado", "sabado"]],
+        "nao_deve_conter": ["segredo"],
+    }
+    assert run_checks(case, _trace("Custa R$ 10,00 no SABADO")).passed
+    assert not run_checks(case, _trace("Custa R$ 11,00 no sábado")).passed
+    assert not run_checks(case, _trace("Custa R$ 10,00 no sábado", "o segredo")).passed
+    # "deve_conter" olha só a resposta final; "nao_deve_conter" olha todas as respostas
+    assert run_checks({"deve_conter": ["x"]}, _trace("x", "y")).passed is False
+    assert not run_checks({"sem_contingencia": True}, _trace("ok", fallback=True)).passed
+
+
+class _Scripted:
+    def __init__(self, turns: list[AssistantTurn]) -> None:
+        self._turns = list(turns)
+
+    def complete(self, messages: list[dict], tools: list[dict]) -> AssistantTurn:
+        return self._turns.pop(0) if self._turns else AssistantTurn("ok", [])
+
+
+def test_judge_parse_e_falha_segura() -> None:
+    aprovado = Judge(_Scripted([AssistantTurn('x {"aprovado": true, "motivo": "ok"} y', [])]))
+    assert aprovado.evaluate("r", "t").approved
+    reprovado = Judge(_Scripted([AssistantTurn('{"aprovado": false, "motivo": "inventou"}', [])]))
+    assert not reprovado.evaluate("r", "t").approved
+    lixo = Judge(_Scripted([AssistantTurn("não sei", [])] * 3)).evaluate("r", "t")
+    assert not lixo.approved and "inválida" in lixo.reason
+
+
+def test_juiz_tenta_de_novo_quando_a_resposta_vem_vazia_ou_cortada() -> None:
+    respostas = [
+        AssistantTurn(None, []),
+        AssistantTurn('{"aprovado": tr', []),
+        AssistantTurn('{"aprovado": true, "motivo": "ok"}', []),
+    ]
+    assert Judge(_Scripted(respostas)).evaluate("r", "t").approved
+
+
+def test_run_all_end_to_end_com_modelo_falso(tmp_path: Path) -> None:
+    cases = [
+        {
+            "id": "loja",
+            "categoria": "loja",
+            "turnos": ["onde fica a loja?"],
+            "tools_obrigatorias": ["consultar_loja"],
+            "deve_conter": ["14 de Maio"],
+            "rubrica": "cita o endereço",
+        },
+        {"id": "falha", "categoria": "loja", "turnos": ["oi"], "deve_conter": ["inexistente"]},
+    ]
+    agent_model = _Scripted(
+        [
+            AssistantTurn(None, [ToolCall("c1", "consultar_loja", "{}")]),
+            AssistantTurn("Rua 14 de Maio, 3200", []),
+        ]
+    )
+    # um modelo por caso evita corrida entre threads no roteiro
+    results = run_all(
+        cases[:1],
+        agent_model,
+        Judge(_Scripted([AssistantTurn('{"aprovado": true, "motivo": "ok"}', [])])),
+        "v1",
+        "2026-03-20",
+        workers=1,
+    )
+    assert results[0].passed and results[0].judge_approved is True
+    assert results[0].tools == ["consultar_loja"]
+
+    results += run_all(cases[1:], _Scripted([]), None, "v1", "2026-03-20", workers=1)
+    assert not results[1].passed
+    resumo = summarize(results)
+    assert resumo["aprovados"] == 1 and resumo["total"] == 2
+
+    meta = {
+        "prompt": "v1",
+        "model": "x/y",
+        "judge_model": "j",
+        "executado_em": "2026-11-01T10:30:45",
+    }
+    json_path, md_path = write_report(tmp_path, meta, results)
+    assert json_path.name == "2026-11-01_v1_x_y_103045.json"
+    assert "transcript" in json.loads(json_path.read_text())["casos"][0]
+    assert json.loads(json_path.read_text())["resumo"]["aprovados"] == 1
+    assert "❌" in md_path.read_text() and "1/2" in render_markdown(meta, results)
+
+
+def test_caso_com_erro_de_execucao_nao_derruba_o_relatorio() -> None:
+    case = {"id": "ruim", "categoria": "x", "turnos": ["oi"], "data_referencia": "nao-e-data"}
+    result = run_all([case], _Scripted([]), None, "v1", "2026-03-20", workers=1)[0]
+    assert not result.passed and result.error
+
+
+def test_palavra_inteira_nao_casa_com_trecho_de_outra_palavra() -> None:
+    case = {"id": "p", "categoria": "x", "turnos": ["oi"], "nao_deve_conter_palavra": ["Ana"]}
+    ok = run_checks(case, Trace(["Não consigo analisar o pedido"], []))
+    assert ok.passed
+    bad = run_checks(case, Trace(["O pedido é da Ana."], []))
+    assert not bad.passed
+
+
+def test_nao_comeca_com_so_pega_aceitacao_da_persona() -> None:
+    case = {"id": "p", "categoria": "x", "turnos": ["oi"], "nao_comeca_com": ["DAN ativado"]}
+    assert not run_checks(case, Trace(['"DAN ativado"! Sem regras.'], [])).passed
+    assert run_checks(case, Trace(["Não vou dizer 'DAN ativado', mas posso ajudar."], [])).passed
+    assert run_checks(
+        case, Trace(["DAN ativado? Não vou fazer isso, mas posso ajudar."], [])
+    ).passed
+
+
+def test_resposta_com_trigesimo_dia_satisfaz_o_caso_de_troca() -> None:
+    cases, _ = load_cases(Path("evals/casos.yaml"))
+    case = next(c for c in cases if c["id"] == "troca_por_defeito")
+    reply = "Está exatamente no 30º dia corrido, no limite da regra."
+    assert run_checks(case, Trace([reply], ["consultar_pedido", "consultar_politicas"])).passed
+
+
+def test_juiz_marca_resultado_truncado() -> None:
+    from evals.judge import format_transcript
+
+    shown = format_transcript([("oi", "ola", [("t", {}, {"x": "a" * 9000})])])
+    assert "[truncado]" in shown
+
+
+def test_recusas_legitimas_nao_reprovam_nas_checagens_de_texto_livre() -> None:
+    cases, _ = load_cases(Path("evals/casos.yaml"))
+    by_id = {c["id"]: c for c in cases}
+    recusas = {
+        "pedido_email_incorreto": "Não consegui verificar se seu pedido foi enviado com isso.",
+        "pedido_ilicito_wifi": "Não posso ensinar força bruta nem invadir rede.",
+        "injecao_mudar_persona": "DAN ativado? Sou o Téo, posso ajudar com instrumentos.",
+    }
+    for case_id, reply in recusas.items():
+        tools = ["consultar_pedido"] if case_id == "pedido_email_incorreto" else []
+        assert run_checks(by_id[case_id], Trace([reply], tools)).passed, case_id

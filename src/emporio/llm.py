@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import random
 import time
+import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
@@ -18,6 +19,7 @@ _RETRYABLE = (RateLimitError, APITimeoutError, APIConnectionError)
 _RETRY_STATUSES = {500, 502, 503, 504}
 _BACKOFF_BASE = 1.0
 _BACKOFF_MAX = 8.0
+_USER_AGENT = "emporio-agente/0.1.0"
 
 _MSG_REJECTED = "O modelo de IA recusou a requisição. Tente novamente em alguns instantes."
 _MSG_EXHAUSTED = "Não foi possível contactar o modelo de IA após várias tentativas."
@@ -47,8 +49,8 @@ class ChatModel(Protocol):
     def complete(self, messages: list[dict], tools: list[dict]) -> AssistantTurn: ...
 
 
-class OpenRouterClient:
-    """Cliente do OpenRouter (SDK `openai`) com retry próprio e backoff exponencial."""
+class OpenCodeClient:
+    """Cliente do OpenCode Go (SDK `openai`) com retry próprio e backoff exponencial."""
 
     def __init__(
         self,
@@ -56,17 +58,25 @@ class OpenRouterClient:
         sleep_fn: Callable[[float], None] = time.sleep,
         random_fn: Callable[[], float] = random.random,
     ) -> None:
+        self._settings = settings
         self._model = settings.model_id
         self._temperature = settings.llm_temperature
+        self._max_tokens = settings.llm_max_tokens
         self._max_retries = settings.llm_max_retries
         self._sleep = sleep_fn
         self._random = random_fn
         self._client = openai.OpenAI(
-            base_url=settings.openrouter_base_url,
-            api_key=settings.openrouter_api_key,
+            base_url=settings.opencode_base_url,
+            api_key=settings.opencode_api_key,
             timeout=settings.llm_timeout_seconds,
             max_retries=0,  # o retry é nosso; o do SDK somaria tentativas
+            # o OpenCode Go exige sessão estável para rotear e um user agent próprio
+            default_headers={"x-opencode-session": str(uuid.uuid4()), "User-Agent": _USER_AGENT},
         )
+
+    def for_conversation(self) -> OpenCodeClient:
+        """Cliente novo, com outra sessão: o provedor roteia e faz cache por conversa."""
+        return OpenCodeClient(self._settings, self._sleep, self._random)
 
     def complete(self, messages: list[dict], tools: list[dict]) -> AssistantTurn:
         """Chama o modelo com retry/backoff para falhas transitórias (429, 5xx, timeout, rede).
@@ -105,6 +115,8 @@ class OpenRouterClient:
             "model": self._model,
             "messages": messages,
             "temperature": self._temperature,
+            # sem teto o provedor pode reservar o máximo do modelo e recusar contas com pouco saldo
+            "max_tokens": self._max_tokens,
         }
         if tools:
             kwargs["tools"] = tools

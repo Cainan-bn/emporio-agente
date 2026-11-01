@@ -1,5 +1,7 @@
 # Fase 5 — Agente, cliente LLM e CLI (`fase/05-agente`)
 
+> **Histórico:** esta spec foi escrita para o OpenRouter (`OpenRouterClient`, `OPENROUTER_*`). O provedor atual é o OpenCode Go (`OpenCodeClient`, `OPENCODE_*`); veja os ADR-013 e ADR-014 em `docs/decisoes.md`.
+
 **Objetivo:** loop de conversa com *function calling*, cliente OpenRouter com retry, CLI interativa. O Arquiteto **já escreveu** `docs/persona.md` e `src/emporio/prompts/v1.md` (não os altere). ADR-012 em `docs/decisoes.md`. Ferramentas (`ToolRegistry`, fase 4), repositórios e políticas existem em `main`. **Testes sem rede.**
 
 ## Arquivos
@@ -25,7 +27,7 @@
 - Teste de integração leve: `build_agent` com `FakeModel` injetável (parâmetro `model=`) usando dados reais: "Qual o endereço?" → modelo falso pede `consultar_loja` → resposta contém "Rua 14 de Maio".
 
 ## Critérios de aceite
-`ruff check .`, `ruff format --check .`, `pytest` verdes em venv limpo e **por commit**: rode o **pytest completo e cole a última linha REAL**; commits separados por assunto, código+teste juntos, <70 col, em português (ex.: `feat(llm): cliente OpenRouter com retry e backoff`, `feat(agente): loop de tool calling com limites`, `feat(cli): chat interativo`); `data/` intocado; sem dependência nova; **não** fazer chamadas reais ao OpenRouter em nenhum teste; nenhum segredo.
+`ruff check .`, `ruff format --check .`, `pytest` verdes em venv limpo e **por commit** (exceção registrada: `e7c7605` da fase 6, ver "Notas de processo" no README): rode o **pytest completo e cole a última linha REAL**; commits separados por assunto, código+teste juntos, <70 col, em português (ex.: `feat(llm): cliente OpenRouter com retry e backoff`, `feat(agente): loop de tool calling com limites`, `feat(cli): chat interativo`); `data/` intocado; sem dependência nova; **não** fazer chamadas reais ao OpenRouter em nenhum teste; nenhum segredo.
 
 ## Fluxo
 Branch `fase/05-agente` existe (com spec, persona, prompt v1 e ADR-012). `git pull`, implemente, push, `gh pr create` (base `main`), avise o Arquiteto. Não faça merge. Nunca force-push.

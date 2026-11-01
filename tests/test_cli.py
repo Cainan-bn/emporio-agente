@@ -78,17 +78,17 @@ def test_run_chat_eof(agent: Agent) -> None:
 
 def test_main_sem_chave_devolve_2(monkeypatch: pytest.MonkeyPatch, capsys, tmp_path) -> None:
     monkeypatch.chdir(tmp_path)
-    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("OPENCODE_API_KEY", raising=False)
     assert main([]) == 2
     err = capsys.readouterr().err
-    assert "OPENROUTER_API_KEY" in err and "Traceback" not in err
+    assert "OPENCODE_API_KEY" in err and "Traceback" not in err
 
 
 def test_main_config_invalida_devolve_2_sem_traceback(
     monkeypatch: pytest.MonkeyPatch, capsys, tmp_path
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-x")
+    monkeypatch.setenv("OPENCODE_API_KEY", "sk-x")
     monkeypatch.setenv("LLM_TEMPERATURE", "nan")
     assert main([]) == 2
     err = capsys.readouterr().err
@@ -107,7 +107,7 @@ def test_python_m_emporio_sem_chave_sai_com_codigo_2(tmp_path) -> None:
     import sys
     from pathlib import Path
 
-    env = {k: v for k, v in os.environ.items() if k != "OPENROUTER_API_KEY"}
+    env = {k: v for k, v in os.environ.items() if k != "OPENCODE_API_KEY"}
     env["PYTHONPATH"] = str(Path("src").resolve())
     done = subprocess.run(
         [sys.executable, "-m", "emporio"],
