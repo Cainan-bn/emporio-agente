@@ -59,3 +59,8 @@ Formato: contexto → decisão → alternativas → consequência. Atualizado ao
 - **Decisão:** `ChatModel` (Protocol) isola o LLM; `OpenRouterClient` usa o SDK `openai` com `base_url` do OpenRouter, **retry próprio** com backoff exponencial + jitter (429, 5xx, timeout, conexão) e timeout por chamada; o SDK roda com `max_retries=0` para não somar tentativas. `Agent` mantém o histórico, executa *tool calls* pelo `ToolRegistry` e limita iterações (`MAX_TOOL_ITERATIONS`). Falha do LLM ou estouro de iterações → resposta de contingência fixa (sem detalhe técnico) que oferece o atendimento humano. Prompt em arquivo versionado (`prompts/v1.md`, depois `v2.md`) escolhido por `PROMPT_VERSION`.
 - **Alternativas:** LangChain/agents (ADR-001), streaming (YAGNI para CLI).
 - **Consequência:** testes do agente usam um `FakeModel` roteirizado, sem rede; o prompt muda sem tocar no código.
+
+## ADR — Provedor LLM: OpenCode Go (substitui OpenRouter)
+
+- **Decisão:** o cliente (`OpenCodeClient`, SDK `openai`) aponta para o OpenCode Go (`OPENCODE_BASE_URL`, padrão `https://opencode.ai/zen/go/v1`, chave em `OPENCODE_API_KEY`). `MODEL_ID` e `JUDGE_MODEL_ID` padrão: `deepseek-v4.1-flash-free`. Os ADRs anteriores que citam OpenRouter e Claude Haiku ficam como histórico.
+- **Eval:** os relatórios de 01/11 até `v2_..._1340*` foram feitos com Haiku via OpenRouter. Os de 023512 e 023549 têm falhas do juiz por saldo (HTTP 402) e não medem o agente. Os do modelo novo precisam ser gerados de novo.

@@ -1,6 +1,6 @@
 # Empório da Música — Agente de Atendimento
 
-Assistente virtual inteligente para atendimento da loja Empório da Música, construído com a API OpenAI (via OpenRouter).
+Assistente virtual inteligente para atendimento da loja Empório da Música, construído com a API compatível com OpenAI (via OpenCode Go).
 
 ## Funcionalidades
 
