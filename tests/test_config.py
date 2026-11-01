@@ -8,8 +8,8 @@ import pytest
 from emporio.config import Settings, load_settings
 
 ENV_VARS = [
-    "OPENROUTER_API_KEY",
-    "OPENROUTER_BASE_URL",
+    "OPENCODE_API_KEY",
+    "OPENCODE_BASE_URL",
     "MODEL_ID",
     "JUDGE_MODEL_ID",
     "REFERENCE_DATE",
@@ -35,10 +35,10 @@ def test_default_values(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None
     _clear_env(monkeypatch)
     env_file = _make_env(tmp_path)
     settings = load_settings(env_file)
-    assert settings.openrouter_api_key == ""
-    assert settings.openrouter_base_url == "https://openrouter.ai/api/v1"
-    assert settings.model_id == "anthropic/claude-haiku-5.5"
-    assert settings.judge_model_id == "anthropic/claude-sonnet-5.5"
+    assert settings.opencode_api_key == ""
+    assert settings.opencode_base_url == "https://opencode.ai/zen/go/v1"
+    assert settings.model_id == "deepseek-v4.1-flash-free"
+    assert settings.judge_model_id == "deepseek-v4.1-flash-free"
     assert settings.reference_date is None
     assert settings.max_tool_iterations == 6
     assert settings.llm_timeout_seconds == 30
@@ -48,13 +48,13 @@ def test_default_values(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None
 
 def test_environment_override(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _clear_env(monkeypatch)
-    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-test-key")
+    monkeypatch.setenv("OPENCODE_API_KEY", "sk-test-key")
     monkeypatch.setenv("MODEL_ID", "custom-model")
     monkeypatch.setenv("MAX_TOOL_ITERATIONS", "10")
     monkeypatch.setenv("LOG_LEVEL", "DEBUG")
     env_file = _make_env(tmp_path)
     settings = load_settings(env_file)
-    assert settings.openrouter_api_key == "sk-test-key"
+    assert settings.opencode_api_key == "sk-test-key"
     assert settings.model_id == "custom-model"
     assert settings.max_tool_iterations == 10
     assert settings.log_level == "DEBUG"
@@ -110,8 +110,8 @@ def test_invalid_llm_timeout_seconds(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_settings_is_frozen() -> None:
     settings = Settings(
-        openrouter_api_key="",
-        openrouter_base_url="https://openrouter.ai/api/v1",
+        opencode_api_key="",
+        opencode_base_url="https://opencode.ai/zen/go/v1",
         model_id="test",
         judge_model_id="judge",
         reference_date=None,

@@ -47,8 +47,8 @@ class ChatModel(Protocol):
     def complete(self, messages: list[dict], tools: list[dict]) -> AssistantTurn: ...
 
 
-class OpenRouterClient:
-    """Cliente do OpenRouter (SDK `openai`) com retry próprio e backoff exponencial."""
+class OpenCodeClient:
+    """Cliente do OpenCode Go (SDK `openai`) com retry próprio e backoff exponencial."""
 
     def __init__(
         self,
@@ -63,8 +63,8 @@ class OpenRouterClient:
         self._sleep = sleep_fn
         self._random = random_fn
         self._client = openai.OpenAI(
-            base_url=settings.openrouter_base_url,
-            api_key=settings.openrouter_api_key,
+            base_url=settings.opencode_base_url,
+            api_key=settings.opencode_api_key,
             timeout=settings.llm_timeout_seconds,
             max_retries=0,  # o retry é nosso; o do SDK somaria tentativas
         )
@@ -106,7 +106,7 @@ class OpenRouterClient:
             "model": self._model,
             "messages": messages,
             "temperature": self._temperature,
-            # sem teto o OpenRouter reserva o máximo do modelo e recusa (402) contas com pouco saldo
+            # sem teto o provedor pode reservar o máximo do modelo e recusar contas com pouco saldo
             "max_tokens": self._max_tokens,
         }
         if tools:

@@ -12,7 +12,7 @@ from typing import Any
 from emporio.agent import Agent
 from emporio.config import load_settings
 from emporio.data.loader import DATA_DIR
-from emporio.llm import OpenRouterClient
+from emporio.llm import OpenCodeClient
 from emporio.prompts import load_system_prompt
 from emporio.tools import build_registry
 
@@ -37,7 +37,7 @@ def build_agent(
     if model is not None:
         llm = model
     else:
-        llm = OpenRouterClient(settings)
+        llm = OpenCodeClient(settings)
 
     base = data_dir if data_dir is not None else DATA_DIR
     registry = build_registry(today=today, data_dir=base)
@@ -129,10 +129,10 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError as exc:  # configuração inválida: mensagem já é amigável (sem segredos)
         print(f"Erro de configuração: {exc}", file=sys.stderr)
         return 2
-    if not settings.openrouter_api_key:
+    if not settings.opencode_api_key:
         print(
-            "Erro: OPENROUTER_API_KEY não configurada.\n"
-            "Crie um arquivo .env com OPENROUTER_API_KEY=sua-chave\n"
+            "Erro: OPENCODE_API_KEY não configurada.\n"
+            "Crie um arquivo .env com OPENCODE_API_KEY=sua-chave\n"
             "ou exporte a variável de ambiente.",
             file=sys.stderr,
         )

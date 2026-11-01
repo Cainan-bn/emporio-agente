@@ -12,7 +12,7 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT))
 
 from emporio.config import load_settings  # noqa: E402
-from emporio.llm import OpenRouterClient  # noqa: E402
+from emporio.llm import OpenCodeClient  # noqa: E402
 from evals.judge import Judge  # noqa: E402
 from evals.runner import load_cases, now_iso, run_all, summarize, write_report  # noqa: E402
 
@@ -35,10 +35,8 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError as exc:
         print(f"Erro de configuração: {exc}", file=sys.stderr)
         return 2
-    if not settings.openrouter_api_key:
-        print(
-            "Erro: OPENROUTER_API_KEY não configurada (.env na raiz do projeto).", file=sys.stderr
-        )
+    if not settings.opencode_api_key:
+        print("Erro: OPENCODE_API_KEY não configurada (.env na raiz do projeto).", file=sys.stderr)
         return 2
     settings = replace(
         settings,
@@ -53,7 +51,7 @@ def main(argv: list[str] | None = None) -> int:
             print("Nenhum caso corresponde a --only.", file=sys.stderr)
             return 2
 
-    agent_model = OpenRouterClient(settings)
+    agent_model = OpenCodeClient(settings)
     judge = None
     if not args.no_judge:
         judge_settings = replace(
@@ -62,7 +60,7 @@ def main(argv: list[str] | None = None) -> int:
             llm_temperature=0.0,
             llm_max_tokens=JUDGE_MAX_TOKENS,  # o juiz gasta tokens raciocinando antes do JSON
         )
-        judge = Judge(OpenRouterClient(judge_settings))
+        judge = Judge(OpenCodeClient(judge_settings))
 
     print(f"Rodando {len(cases)} casos | prompt {settings.prompt_version} | {settings.model_id}")
     results = run_all(

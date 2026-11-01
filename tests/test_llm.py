@@ -7,7 +7,7 @@ import pytest
 from openai import APIConnectionError, APIStatusError, APITimeoutError, RateLimitError
 
 from emporio.config import Settings
-from emporio.llm import AssistantTurn, LLMError, OpenRouterClient, ToolCall
+from emporio.llm import AssistantTurn, LLMError, OpenCodeClient, ToolCall
 
 
 class _Stub:
@@ -26,9 +26,9 @@ def _response(content: str | None = "Olá!", tool_calls: list | None = None) -> 
     return _Stub(choices=[_Stub(message=message)])
 
 
-def _client(settings: Settings, create: Any) -> tuple[OpenRouterClient, list[float]]:
+def _client(settings: Settings, create: Any) -> tuple[OpenCodeClient, list[float]]:
     sleeps: list[float] = []
-    client = OpenRouterClient(settings, sleep_fn=sleeps.append, random_fn=lambda: 0.5)
+    client = OpenCodeClient(settings, sleep_fn=sleeps.append, random_fn=lambda: 0.5)
     client._client.chat.completions.create = create
     return client, sleeps
 
@@ -36,8 +36,8 @@ def _client(settings: Settings, create: Any) -> tuple[OpenRouterClient, list[flo
 @pytest.fixture
 def settings() -> Settings:
     return Settings(
-        openrouter_api_key="sk-test",
-        openrouter_base_url="https://openrouter.ai/api/v1",
+        opencode_api_key="sk-test",
+        opencode_base_url="https://opencode.ai/zen/go/v1",
         model_id="test-model",
         judge_model_id="judge",
         reference_date=None,
@@ -50,7 +50,7 @@ def settings() -> Settings:
     )
 
 
-def test_openrouter_client_import() -> None:
+def test_opencode_client_import() -> None:
     from emporio.llm import ChatModel
 
     assert ChatModel is not None
