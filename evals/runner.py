@@ -164,8 +164,8 @@ def write_report(
 ) -> tuple[Path, Path]:
     out_dir.mkdir(parents=True, exist_ok=True)
     slug = meta["model"].replace("/", "_").replace(":", "_")
-    when = meta["executado_em"]  # aaaa-mm-ddTHH:MM
-    stem = f"{when[:10]}_{meta['prompt']}_{slug}_{when[11:16].replace(':', '')}"
+    when = meta["executado_em"]  # aaaa-mm-ddTHH:MM:SS
+    stem = f"{when[:10]}_{meta['prompt']}_{slug}_{when[11:19].replace(':', '')}"
     json_path, md_path = out_dir / f"{stem}.json", out_dir / f"{stem}.md"
     payload = {"meta": meta, "resumo": summarize(results), "casos": [asdict(r) for r in results]}
     json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -174,4 +174,4 @@ def write_report(
 
 
 def now_iso() -> str:
-    return datetime.now().isoformat(timespec="minutes")
+    return datetime.now().isoformat(timespec="seconds")
