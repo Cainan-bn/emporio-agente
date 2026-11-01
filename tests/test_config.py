@@ -144,7 +144,7 @@ def test_prompt_version_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     _clear_env(monkeypatch)
     env_file = _make_env(tmp_path)
     settings = load_settings(env_file)
-    assert settings.prompt_version == "v1"
+    assert settings.prompt_version == "v3"
 
 
 def test_prompt_version_override(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
