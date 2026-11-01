@@ -29,6 +29,7 @@ class CaseResult:
     judge_reason: str = ""
     replies: list[str] = field(default_factory=list)
     tools: list[str] = field(default_factory=list)
+    transcript: str = ""  # conversa exata enviada ao juiz (ferramentas, argumentos, resultados)
     error: str = ""
 
 
@@ -78,13 +79,14 @@ def run_case(
     base.replies = trace.replies
     base.tools = trace.tool_names
 
+    transcript = format_transcript(
+        [
+            (user, reply.text, [(c.name, c.arguments, c.result) for c in reply.tool_calls])
+            for user, reply in zip(case["turnos"], replies, strict=True)
+        ]
+    )
+    base.transcript = transcript
     if judge is not None and case.get("rubrica"):
-        transcript = format_transcript(
-            [
-                (user, reply.text, [(c.name, c.arguments, c.result) for c in reply.tool_calls])
-                for user, reply in zip(case["turnos"], replies, strict=True)
-            ]
-        )
         verdict = judge.evaluate(case["rubrica"], transcript)
         base.judge_approved = verdict.approved
         base.judge_reason = verdict.reason

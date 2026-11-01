@@ -14,7 +14,7 @@ RUBRICA. Aprove SOMENTE se a última resposta do agente cumpre TODA a rubrica e 
 os resultados das ferramentas. Dados que não aparecem nos resultados das ferramentas são \
 invenção. Responda apenas com JSON: {"aprovado": true|false, "motivo": "uma frase"}."""
 
-_MAX_RESULT_CHARS = 1500
+_MAX_RESULT_CHARS = 4000
 
 
 @dataclass(frozen=True)
@@ -41,9 +41,11 @@ class Judge:
             {"role": "user", "content": f"RUBRICA:\n{rubric.strip()}\n\nCONVERSA:\n{transcript}"},
         ]
         last = "sem resposta"
+        for_conversation = getattr(self._model, "for_conversation", None)
+        model = for_conversation() if for_conversation else self._model  # sessão por avaliação
         for _ in range(attempts):
             try:
-                content = self._model.complete(messages, []).content or ""
+                content = model.complete(messages, []).content or ""
                 data = _extract_json(content)
                 return Verdict(bool(data["aprovado"]), str(data.get("motivo", "")).strip())
             except (LLMError, ValueError, KeyError, TypeError) as exc:
@@ -57,7 +59,9 @@ def format_transcript(turns: list[tuple[str, str, list[tuple[str, dict, dict]]]]
     for user, answer, tools in turns:
         lines.append(f"CLIENTE: {user}")
         for name, args, result in tools:
-            shown = json.dumps(result, ensure_ascii=False)[:_MAX_RESULT_CHARS]
+            shown = json.dumps(result, ensure_ascii=False)
+            if len(shown) > _MAX_RESULT_CHARS:
+                shown = shown[:_MAX_RESULT_CHARS] + " …[truncado]"
             lines.append(f"  [ferramenta {name} {json.dumps(args, ensure_ascii=False)}] -> {shown}")
         lines.append(f"AGENTE: {answer}")
     return "\n".join(lines)
