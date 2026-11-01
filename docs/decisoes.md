@@ -46,7 +46,7 @@ Formato: contexto → decisão → alternativas → consequência. Atualizado ao
 - **Decisão:** seguir a regra mais específica (§3.1 sobre a tabela), citar os dois telefones rotulados, usar e-mail sem acento, nunca repetir "300+ produtos". Na dúvida, encaminhar a humano. Detalhes em `00-analise-dados.md` §4.
 
 ## ADR-010 — Modelo do agente
-- **Decisão (provisória):** `anthropic/claude-haiku-5.5` via OpenRouter (`MODEL_ID`), juiz do eval `anthropic/claude-sonnet-5.5`. Será confirmado/ajustado na fase 6 com base nos resultados do eval.
+- **Decisão (provisória):** `anthropic/claude-haiku-5.5` via OpenRouter (`MODEL_ID`), juiz do eval `anthropic/claude-sonnet-5.5`. **Substituída pelos ADR-013 e ADR-014.**
 - **Alternativas:** `deepseek/deepseek-v4-flash`, `google/gemini-3.x-flash`.
 
 ## ADR-011 — Ferramentas: registro próprio, saída JSON em português, cálculo em código
@@ -60,13 +60,19 @@ Formato: contexto → decisão → alternativas → consequência. Atualizado ao
 - **Alternativas:** LangChain/agents (ADR-001), streaming (YAGNI para CLI).
 - **Consequência:** testes do agente usam um `FakeModel` roteirizado, sem rede; o prompt muda sem tocar no código.
 
-## ADR — Provedor LLM: OpenCode Go (substitui OpenRouter)
+## ADR-013 — Provedor LLM: OpenCode Go (substitui OpenRouter)
 
-- **Decisão:** o cliente (`OpenCodeClient`, SDK `openai`) aponta para o OpenCode Go (`OPENCODE_BASE_URL`, padrão `https://opencode.ai/inference/go/openai/v1`, chave em `OPENCODE_API_KEY`). `MODEL_ID` e `JUDGE_MODEL_ID` padrão: `deepseek-v4.1-flash`. Os ADRs anteriores que citam OpenRouter e Claude Haiku ficam como histórico.
-- **Eval:** os relatórios de 01/11 até `v2_..._1340*` foram feitos com Haiku via OpenRouter. Os de 023512 e 023549 têm falhas do juiz por saldo (HTTP 402) e não medem o agente. Os do modelo novo precisam ser gerados de novo.
+- **Decisão:** o cliente (`OpenCodeClient`, SDK `openai`) usa o OpenCode Go: `OPENCODE_BASE_URL` (padrão `https://opencode.ai/inference/go/openai/v1`) e `OPENCODE_API_KEY`. Modelo padrão do agente e do juiz: `deepseek-v4.1-flash` (exige a região Global nas configurações de privacidade do workspace). O id `deepseek-v4.1-flash-free` não existe no Go.
+- **Contrato da API:** o provedor exige `x-opencode-session` (um ID estável por *conversa*, para roteamento e cache) e um `User-Agent` próprio. Cada `OpenCodeClient` gera uma sessão; no eval cada caso usa `for_conversation()` e tem a sua.
+- **Risco:** o Go é "pensado para OpenCode e outros agentes de código" e o tráfego é monitorado; há limites de uso por 5 h, semana e mês. Plano B: API paga por uso (só trocar as variáveis do `.env`).
+- **Eval:** os relatórios `anthropic_claude-haiku-5.5` em `evals/relatorios/` são do período OpenRouter. Os de `023512` e `023549` foram feitos com juiz falhando (`LLMError`, quase certo por saldo/HTTP 402 — o relatório não registra o status) e também têm falhas reais do agente (preço citado em `produto_inexistente`, `promocao_expirada` sem R$ 899,00). O `023433` tem 4 falhas de juiz por `LLMError`. Todos usavam checagens por substring que davam falso negativo (corrigidas no ADR-014). Nenhum é comparável ao modelo atual.
 
-## ADR — Modelo e prompt padrão (resultado do eval da fase 6)
+## ADR-014 — Prompt padrão e qualidade do eval (fase 6)
 
-- **Decisão:** modelo `deepseek-v4.1-flash` (OpenCode Go) para o agente e para o juiz; prompt padrão `v2`.
-- **Evidência (27 casos, juiz = mesmo modelo):** v1 26/27 (1 rodada; reprovou `devolucao_dentro_do_prazo` com "Pode sim"); v2 27/27 em 2 rodadas. Amostra pequena; o modelo varia entre execuções.
-- **Limite conhecido:** o juiz é o mesmo modelo do agente e tende a ser mais condescendente que um juiz maior. Os relatórios com Haiku/OpenRouter (início de 01/11) não são comparáveis.
+- **Decisão:** prompt padrão **`v1`**. O `v2` (v1 + regra "nunca confirme a troca antes da avaliação") fica disponível via `PROMPT_VERSION=v2`, mas **não** foi adotado: não há ganho mensurável.
+- **Evidência** (28 casos, `deepseek-v4.1-flash`, juiz = mesmo modelo, 3 rodadas por versão, checagens corrigidas): v1 = 27, 25, 27 (79/84); v2 = 27, 26, 25 (78/84). Rodadas anteriores com 27 casos (v1 26/27; v2 27/27 e 27/27) mostraram-se ruído do modelo.
+- **Falhas recorrentes (ambos os prompts):** `devolucao_dentro_do_prazo` reprova em 5 das 6 rodadas (o agente diz "pode sim" sem explicar que a entrega estimada é só uma aproximação e que não há data de recebimento); `produto_inexistente` reprova 3 vezes (agente alega problema técnico em vez de dizer que não achou o produto). Candidatos a um `v3` ou a revisão da rubrica.
+- **Por que o v2 foi escrito:** com Haiku, `troca_por_defeito` reprovou numa rodada por "Sim, dá para trocar" (relatório não preservado). Com o modelo atual o problema não se reproduziu em 3 rodadas do v1.
+- **Checagens determinísticas:** substring curta dava falso negativo (ex.: "Ana" em "analisar", "R$" em preço de alternativa real). Passam a usar `nao_deve_conter_palavra` (palavra inteira) e regras específicas; o que dependia de interpretação foi para a rubrica do juiz.
+- **Casos:** `injecao_mudar_persona` pede só mudança de persona/opinião política; o pedido ilícito (invadir Wi-Fi) voltou como caso próprio `pedido_ilicito_wifi`.
+- **Limites:** o juiz é o mesmo modelo do agente (tende a ser mais condescendente) e a amostra é pequena; o modelo varia entre execuções.

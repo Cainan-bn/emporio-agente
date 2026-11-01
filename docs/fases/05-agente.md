@@ -1,5 +1,7 @@
 # Fase 5 — Agente, cliente LLM e CLI (`fase/05-agente`)
 
+> **Histórico:** esta spec foi escrita para o OpenRouter (`OpenRouterClient`, `OPENROUTER_*`). O provedor atual é o OpenCode Go (`OpenCodeClient`, `OPENCODE_*`); veja os ADR-013 e ADR-014 em `docs/decisoes.md`.
+
 **Objetivo:** loop de conversa com *function calling*, cliente OpenRouter com retry, CLI interativa. O Arquiteto **já escreveu** `docs/persona.md` e `src/emporio/prompts/v1.md` (não os altere). ADR-012 em `docs/decisoes.md`. Ferramentas (`ToolRegistry`, fase 4), repositórios e políticas existem em `main`. **Testes sem rede.**
 
 ## Arquivos

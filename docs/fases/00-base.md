@@ -1,5 +1,7 @@
 # Fase 0 — Base do repositório (`fase/00-base`)
 
+> **Histórico:** esta spec foi escrita para o OpenRouter (`OpenRouterClient`, `OPENROUTER_*`). O provedor atual é o OpenCode Go (`OpenCodeClient`, `OPENCODE_*`); veja os ADR-013 e ADR-014 em `docs/decisoes.md`.
+
 **Objetivo:** esqueleto do projeto, pronto para as fases seguintes. Sem lógica de negócio.
 
 ## Entregas (um commit por item, em português, Conventional Commits)
