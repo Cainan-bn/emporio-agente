@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from emporio.policies.ingest import PolicyLoadError, extract_pages
+from emporio.policies.ingest import PolicyLoadError, ascii_email_domains, extract_pages
 
 PDF_PATH = Path("data/políticas_da_loja.pdf")
 
@@ -39,3 +39,18 @@ def test_no_chopped_words() -> None:
 def test_missing_pdf(tmp_path: Path) -> None:
     with pytest.raises(PolicyLoadError):
         extract_pages(tmp_path / "nonexistent.pdf")
+
+
+def test_ascii_email_domains_only_touches_the_domain() -> None:
+    assert ascii_email_domains("E-mail: contato@empóriodamusica.com.br.") == (
+        "E-mail: contato@emporiodamusica.com.br."
+    )
+    assert ascii_email_domains("josé@jmail.com e Empório da Música") == (
+        "josé@jmail.com e Empório da Música"
+    )
+
+
+def test_pdf_emails_have_no_accent() -> None:
+    text = "\n".join(extract_pages(PDF_PATH))
+    assert "contato@emporiodamusica.com.br" in text
+    assert "empóriodamusica" not in text
