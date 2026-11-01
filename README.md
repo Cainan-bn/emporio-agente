@@ -81,13 +81,27 @@ Você: Vocês parcelam em 10x? E no PIX tem desconto?
 
 Sem `OPENCODE_API_KEY`, o programa explica o que falta e sai com código 2, sem *stack trace*.
 
+### Exemplos de interação
+
+A pasta [`examples/`](examples/) traz 4 conversas reais com o agente, cada uma mostrando as chamadas de ferramenta (nome, argumentos e resultado) que o Téo fez nos bastidores:
+
+| Exemplo | Cenário |
+|---|---|
+| [`01-catalogo-violoes.md`](examples/01-catalogo-violoes.md) | Consulta de catálogo: violões até R$ 1.000 |
+| [`02-endereco-da-loja.md`](examples/02-endereco-da-loja.md) | Informação geral: endereço e horário da loja |
+| [`03-preco-takamine-gd20.md`](examples/03-preco-takamine-gd20.md) | Consulta de preço de um produto |
+| [`04-devolucao-pedido.md`](examples/04-devolucao-pedido.md) | Cruzamento de pedido e política: pedido de devolução |
+
+Para refazê-los (faz chamadas reais ao modelo e usa a data fixa 20/02/2026): `python scripts/gerar_exemplos.py`.
+
 ## Estrutura do Projeto
 
 ```
 data/                   CSVs e PDF originais (não alterar)
 docs/                   análise dos dados, persona, decisões (ADRs) e specs das fases
 evals/                  casos dourados, checagens, juiz, runner e relatórios
-scripts/                profiling dos dados e repetição do eval
+examples/               transcrições reais de exemplo, com as chamadas de ferramenta
+scripts/                profiling dos dados, repetição do eval e geração dos exemplos
 src/emporio/
   agent.py              loop de conversa com function calling, histórico e limites
   llm.py                cliente do modelo (retry, backoff, sem vazar chave)
