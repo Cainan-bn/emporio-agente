@@ -148,9 +148,10 @@ def test_run_all_end_to_end_com_modelo_falso(tmp_path: Path) -> None:
         "prompt": "v1",
         "model": "x/y",
         "judge_model": "j",
-        "executado_em": "2026-11-01T10:30",
+        "executado_em": "2026-11-01T10:30:45",
     }
     json_path, md_path = write_report(tmp_path, meta, results)
+    assert json_path.name == "2026-11-01_v1_x_y_103045.json"
     assert json.loads(json_path.read_text())["resumo"]["aprovados"] == 1
     assert "❌" in md_path.read_text() and "1/2" in render_markdown(meta, results)
 
@@ -159,3 +160,11 @@ def test_caso_com_erro_de_execucao_nao_derruba_o_relatorio() -> None:
     case = {"id": "ruim", "categoria": "x", "turnos": ["oi"], "data_referencia": "nao-e-data"}
     result = run_all([case], _Scripted([]), None, "v1", "2026-03-20", workers=1)[0]
     assert not result.passed and result.error
+
+
+def test_palavra_inteira_nao_casa_com_trecho_de_outra_palavra() -> None:
+    case = {"id": "p", "categoria": "x", "turnos": ["oi"], "nao_deve_conter_palavra": ["Ana"]}
+    ok = run_checks(case, Trace(["Não consigo analisar o pedido"], []))
+    assert ok.passed
+    bad = run_checks(case, Trace(["O pedido é da Ana."], []))
+    assert not bad.passed

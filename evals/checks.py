@@ -21,6 +21,7 @@ KNOWN_KEYS = frozenset(
         "deve_conter",
         "deve_conter_algum",
         "nao_deve_conter",
+        "nao_deve_conter_palavra",
         "sem_contingencia",
         "rubrica",
     }
@@ -36,6 +37,12 @@ def norm(text: str) -> str:
 
 def contains(haystack: str, needle: str) -> bool:
     return norm(needle) in norm(haystack)
+
+
+def contains_word(haystack: str, needle: str) -> bool:
+    """Como `contains`, mas só como palavra inteira ("Ana" não casa com "analisar")."""
+    pattern = rf"(?<!\w){re.escape(norm(needle))}(?!\w)"
+    return re.search(pattern, norm(haystack)) is not None
 
 
 @dataclass(frozen=True)
@@ -93,6 +100,9 @@ def run_checks(case: dict[str, Any], trace: Trace) -> CheckResult:
     for snippet in case.get("nao_deve_conter", []):
         if contains(everything, snippet):
             result.failures.append(f"resposta contém o trecho proibido {snippet!r}")
+    for word in case.get("nao_deve_conter_palavra", []):
+        if contains_word(everything, word):
+            result.failures.append(f"resposta contém a palavra proibida {word!r}")
     if case.get("sem_contingencia") and trace.fallback:
         result.failures.append("o agente caiu na mensagem de contingência")
     return result
