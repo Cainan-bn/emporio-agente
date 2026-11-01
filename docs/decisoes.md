@@ -44,6 +44,7 @@ Formato: contexto → decisão → alternativas → consequência. Atualizado ao
 
 ## ADR-009 — Contradições do PDF
 - **Decisão:** seguir a regra mais específica (§3.1 sobre a tabela), citar os dois telefones rotulados, usar e-mail sem acento, nunca repetir "300+ produtos". Na dúvida, encaminhar a humano. Detalhes em `00-analise-dados.md` §4.
+- **Aplicação do e-mail sem acento:** só foi garantida em código depois do teste de ponta a ponta de 01/11, em que `consultar_loja` devolvia `contato@empóriodamusica.com.br` e o Téo o repetiu. Agora `extract_pages` tira o acento do domínio de qualquer e-mail do PDF (`ascii_email_domains`), então `consultar_loja` e `consultar_politicas` já entregam `contato@emporiodamusica.com.br`.
 
 ## ADR-010 — Modelo do agente
 - **Decisão (provisória):** `anthropic/claude-haiku-5.5` via OpenRouter (`MODEL_ID`), juiz do eval `anthropic/claude-sonnet-5.5`. **Substituída pelos ADR-013 e ADR-014.**
