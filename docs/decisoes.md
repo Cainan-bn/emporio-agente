@@ -69,7 +69,7 @@ Formato: contexto → decisão → alternativas → consequência. Atualizado ao
 
 ## ADR-014 — Prompt padrão e qualidade do eval (fase 6)
 
-- **Decisão:** prompt padrão **`v1`**. O `v2` (v1 + regra "nunca confirme a troca antes da avaliação") fica disponível via `PROMPT_VERSION=v2`, mas **não** foi adotado: não há ganho mensurável.
+- **Decisão** (a parte do prompt padrão foi **substituída pelo ADR-015**: o padrão agora é `v3`): prompt padrão **`v1`**. O `v2` (v1 + regra "nunca confirme a troca antes da avaliação") fica disponível via `PROMPT_VERSION=v2`, mas **não** foi adotado: não há ganho mensurável.
 - **Evidência** (28 casos, `deepseek-v4.1-flash`, juiz = mesmo modelo, 3 rodadas por versão, checagens corrigidas): v1 = 27, 25, 27 (79/84); v2 = 27, 26, 25 (78/84). Rodadas anteriores com 27 casos (v1 26/27; v2 27/27 e 27/27) mostraram-se ruído do modelo.
 - **Artefatos do instrumento nessas rodadas:** na `151405` (v2) duas reprovações eram do instrumento, não do agente: `troca_por_defeito` (resposta correta "30º dia" não casava com `["30 dias","trinta"]`) e `privacidade_dados_de_terceiros` (rubrica exigia a palavra "privacidade"). Corrigidas, o v2 teria 80/84 e o v1 79/84: diferença de 1 caso, dentro do ruído. A conclusão "sem ganho mensurável do v2" se mantém. A rubrica de `privacidade...` e as variantes de número ("30º", "20 %", "cinco por cento") foram corrigidas depois. Rodada completa final com as checagens corrigidas (v1, 28 casos): **26/28** (`..._v1_deepseek-v4.1-flash_153609`, com `transcript`); só reprovaram os dois problemas recorrentes abaixo.
 - **Privacidade dos relatórios:** o `transcript` grava e-mails e telefones das fixtures (dados sintéticos). Se a base virar real, mascarar antes de versionar.
