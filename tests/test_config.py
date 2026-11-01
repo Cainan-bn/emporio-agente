@@ -144,14 +144,14 @@ def test_prompt_version_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     _clear_env(monkeypatch)
     env_file = _make_env(tmp_path)
     settings = load_settings(env_file)
-    assert settings.prompt_version == "v1"
+    assert settings.prompt_version == "v2"
 
 
 def test_prompt_version_override(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _clear_env(monkeypatch)
-    env_file = _make_env(tmp_path, "PROMPT_VERSION=v2")
+    env_file = _make_env(tmp_path, "PROMPT_VERSION=v1")
     settings = load_settings(env_file)
-    assert settings.prompt_version == "v2"
+    assert settings.prompt_version == "v1"
 
 
 def test_nao_carrega_env_de_diretorio_ancestral(tmp_path, monkeypatch) -> None:
