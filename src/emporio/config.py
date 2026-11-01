@@ -81,7 +81,7 @@ def load_settings(env_file: str | Path | None = None) -> Settings:
         llm_timeout_seconds=_parse_int_env("LLM_TIMEOUT_SECONDS", "30"),
         llm_max_retries=_parse_int_env("LLM_MAX_RETRIES", "3"),
         llm_temperature=_parse_temperature(),
-        prompt_version=os.getenv("PROMPT_VERSION", "v2"),
+        prompt_version=os.getenv("PROMPT_VERSION", "v1"),
         log_level=os.getenv("LOG_LEVEL", "INFO"),
         llm_max_tokens=_parse_int_env("LLM_MAX_TOKENS", "1024"),
     )
