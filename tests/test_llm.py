@@ -176,3 +176,11 @@ def test_client_sends_session_header_and_user_agent(settings: Settings) -> None:
     headers = client._client.default_headers
     assert headers["x-opencode-session"]
     assert headers["User-Agent"].startswith("emporio-agente/")
+
+
+def test_session_is_stable_per_client_and_new_per_conversation(settings: Settings) -> None:
+    client = OpenCodeClient(settings)
+    first = client._client.default_headers["x-opencode-session"]
+    assert client._client.default_headers["x-opencode-session"] == first
+    other = client.for_conversation()
+    assert other._client.default_headers["x-opencode-session"] != first

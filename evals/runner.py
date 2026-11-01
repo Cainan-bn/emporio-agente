@@ -54,8 +54,9 @@ def run_case(
     base = CaseResult(id=case["id"], categoria=case["categoria"], passed=False)
     try:
         today = date.fromisoformat(str(case.get("data_referencia", default_date)))
+        for_conversation = getattr(model, "for_conversation", None)
         agent = Agent(
-            model,
+            for_conversation() if for_conversation else model,  # sessão própria por caso
             build_registry(today=today),  # uma conexão SQLite por caso (thread própria)
             load_system_prompt(prompt_version, today),
             max_iterations=max_iterations,

@@ -19,7 +19,7 @@ _RETRYABLE = (RateLimitError, APITimeoutError, APIConnectionError)
 _RETRY_STATUSES = {500, 502, 503, 504}
 _BACKOFF_BASE = 1.0
 _BACKOFF_MAX = 8.0
-_USER_AGENT = "emporio-agente/1.0"
+_USER_AGENT = "emporio-agente/0.1.0"
 
 _MSG_REJECTED = "O modelo de IA recusou a requisição. Tente novamente em alguns instantes."
 _MSG_EXHAUSTED = "Não foi possível contactar o modelo de IA após várias tentativas."
@@ -58,6 +58,7 @@ class OpenCodeClient:
         sleep_fn: Callable[[float], None] = time.sleep,
         random_fn: Callable[[], float] = random.random,
     ) -> None:
+        self._settings = settings
         self._model = settings.model_id
         self._temperature = settings.llm_temperature
         self._max_tokens = settings.llm_max_tokens
@@ -72,6 +73,10 @@ class OpenCodeClient:
             # o OpenCode Go exige sessão estável para rotear e um user agent próprio
             default_headers={"x-opencode-session": str(uuid.uuid4()), "User-Agent": _USER_AGENT},
         )
+
+    def for_conversation(self) -> OpenCodeClient:
+        """Cliente novo, com outra sessão: o provedor roteia e faz cache por conversa."""
+        return OpenCodeClient(self._settings, self._sleep, self._random)
 
     def complete(self, messages: list[dict], tools: list[dict]) -> AssistantTurn:
         """Chama o modelo com retry/backoff para falhas transitórias (429, 5xx, timeout, rede).
