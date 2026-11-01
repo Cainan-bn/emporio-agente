@@ -62,5 +62,5 @@ Formato: contexto → decisão → alternativas → consequência. Atualizado ao
 
 ## ADR — Provedor LLM: OpenCode Go (substitui OpenRouter)
 
-- **Decisão:** o cliente (`OpenCodeClient`, SDK `openai`) aponta para o OpenCode Go (`OPENCODE_BASE_URL`, padrão `https://opencode.ai/zen/go/v1`, chave em `OPENCODE_API_KEY`). `MODEL_ID` e `JUDGE_MODEL_ID` padrão: `deepseek-v4.1-flash-free`. Os ADRs anteriores que citam OpenRouter e Claude Haiku ficam como histórico.
+- **Decisão:** o cliente (`OpenCodeClient`, SDK `openai`) aponta para o OpenCode Go (`OPENCODE_BASE_URL`, padrão `https://opencode.ai/inference/go/openai/v1`, chave em `OPENCODE_API_KEY`). `MODEL_ID` e `JUDGE_MODEL_ID` padrão: `deepseek-v4.1-flash`. Os ADRs anteriores que citam OpenRouter e Claude Haiku ficam como histórico.
 - **Eval:** os relatórios de 01/11 até `v2_..._1340*` foram feitos com Haiku via OpenRouter. Os de 023512 e 023549 têm falhas do juiz por saldo (HTTP 402) e não medem o agente. Os do modelo novo precisam ser gerados de novo.
