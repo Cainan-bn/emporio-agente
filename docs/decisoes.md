@@ -64,3 +64,9 @@ Formato: contexto → decisão → alternativas → consequência. Atualizado ao
 
 - **Decisão:** o cliente (`OpenCodeClient`, SDK `openai`) aponta para o OpenCode Go (`OPENCODE_BASE_URL`, padrão `https://opencode.ai/inference/go/openai/v1`, chave em `OPENCODE_API_KEY`). `MODEL_ID` e `JUDGE_MODEL_ID` padrão: `deepseek-v4.1-flash`. Os ADRs anteriores que citam OpenRouter e Claude Haiku ficam como histórico.
 - **Eval:** os relatórios de 01/11 até `v2_..._1340*` foram feitos com Haiku via OpenRouter. Os de 023512 e 023549 têm falhas do juiz por saldo (HTTP 402) e não medem o agente. Os do modelo novo precisam ser gerados de novo.
+
+## ADR — Modelo e prompt padrão (resultado do eval da fase 6)
+
+- **Decisão:** modelo `deepseek-v4.1-flash` (OpenCode Go) para o agente e para o juiz; prompt padrão `v2`.
+- **Evidência (27 casos, juiz = mesmo modelo):** v1 26/27 (1 rodada; reprovou `devolucao_dentro_do_prazo` com "Pode sim"); v2 27/27 em 2 rodadas. Amostra pequena; o modelo varia entre execuções.
+- **Limite conhecido:** o juiz é o mesmo modelo do agente e tende a ser mais condescendente que um juiz maior. Os relatórios com Haiku/OpenRouter (início de 01/11) não são comparáveis.
