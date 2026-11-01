@@ -71,9 +71,11 @@ def load_settings(env_file: str | Path | None = None) -> Settings:
 
     return Settings(
         opencode_api_key=os.getenv("OPENCODE_API_KEY", ""),
-        opencode_base_url=os.getenv("OPENCODE_BASE_URL", "https://opencode.ai/zen/go/v1"),
-        model_id=os.getenv("MODEL_ID", "deepseek-v4.1-flash-free"),
-        judge_model_id=os.getenv("JUDGE_MODEL_ID", "deepseek-v4.1-flash-free"),
+        opencode_base_url=os.getenv(
+            "OPENCODE_BASE_URL", "https://opencode.ai/inference/go/openai/v1"
+        ),
+        model_id=os.getenv("MODEL_ID", "deepseek-v4.1-flash"),
+        judge_model_id=os.getenv("JUDGE_MODEL_ID", "deepseek-v4.1-flash"),
         reference_date=reference_date,
         max_tool_iterations=_parse_int_env("MAX_TOOL_ITERATIONS", "6"),
         llm_timeout_seconds=_parse_int_env("LLM_TIMEOUT_SECONDS", "30"),

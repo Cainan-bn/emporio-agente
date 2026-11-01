@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import random
 import time
+import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
@@ -18,6 +19,7 @@ _RETRYABLE = (RateLimitError, APITimeoutError, APIConnectionError)
 _RETRY_STATUSES = {500, 502, 503, 504}
 _BACKOFF_BASE = 1.0
 _BACKOFF_MAX = 8.0
+_USER_AGENT = "emporio-agente/1.0"
 
 _MSG_REJECTED = "O modelo de IA recusou a requisição. Tente novamente em alguns instantes."
 _MSG_EXHAUSTED = "Não foi possível contactar o modelo de IA após várias tentativas."
@@ -67,6 +69,8 @@ class OpenCodeClient:
             api_key=settings.opencode_api_key,
             timeout=settings.llm_timeout_seconds,
             max_retries=0,  # o retry é nosso; o do SDK somaria tentativas
+            # o OpenCode Go exige sessão estável para rotear e um user agent próprio
+            default_headers={"x-opencode-session": str(uuid.uuid4()), "User-Agent": _USER_AGENT},
         )
 
     def complete(self, messages: list[dict], tools: list[dict]) -> AssistantTurn:

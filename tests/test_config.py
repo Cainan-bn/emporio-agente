@@ -36,9 +36,9 @@ def test_default_values(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None
     env_file = _make_env(tmp_path)
     settings = load_settings(env_file)
     assert settings.opencode_api_key == ""
-    assert settings.opencode_base_url == "https://opencode.ai/zen/go/v1"
-    assert settings.model_id == "deepseek-v4.1-flash-free"
-    assert settings.judge_model_id == "deepseek-v4.1-flash-free"
+    assert settings.opencode_base_url == "https://opencode.ai/inference/go/openai/v1"
+    assert settings.model_id == "deepseek-v4.1-flash"
+    assert settings.judge_model_id == "deepseek-v4.1-flash"
     assert settings.reference_date is None
     assert settings.max_tool_iterations == 6
     assert settings.llm_timeout_seconds == 30
@@ -111,7 +111,7 @@ def test_invalid_llm_timeout_seconds(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_settings_is_frozen() -> None:
     settings = Settings(
         opencode_api_key="",
-        opencode_base_url="https://opencode.ai/zen/go/v1",
+        opencode_base_url="https://opencode.ai/inference/go/openai/v1",
         model_id="test",
         judge_model_id="judge",
         reference_date=None,

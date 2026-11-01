@@ -37,7 +37,7 @@ def _client(settings: Settings, create: Any) -> tuple[OpenCodeClient, list[float
 def settings() -> Settings:
     return Settings(
         opencode_api_key="sk-test",
-        opencode_base_url="https://opencode.ai/zen/go/v1",
+        opencode_base_url="https://opencode.ai/inference/go/openai/v1",
         model_id="test-model",
         judge_model_id="judge",
         reference_date=None,
@@ -169,3 +169,10 @@ def test_envia_max_tokens_ao_provedor(settings: Settings) -> None:
     client, _ = _client(settings, _create)
     client.complete([{"role": "user", "content": "oi"}], [])
     assert enviados[0]["max_tokens"] == settings.llm_max_tokens == 1024
+
+
+def test_client_sends_session_header_and_user_agent(settings: Settings) -> None:
+    client = OpenCodeClient(settings)
+    headers = client._client.default_headers
+    assert headers["x-opencode-session"]
+    assert headers["User-Agent"].startswith("emporio-agente/")
