@@ -34,8 +34,8 @@ git clone https://github.com/Cainan-bn/emporio-agente.git
 cd emporio-agente
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements-dev.txt   # inclui requirements.txt, pytest e ruff
-pip install -e .                      # cria o comando `emporio`
+pip install -r requirements-dev.txt   # dependências de execução (requirements.txt), pytest e ruff
+pip install -e .                      # cria o comando `emporio`; precisa vir depois da linha acima
 ```
 
 ## Configuração
@@ -120,7 +120,7 @@ python evals/run.py --no-judge                   # só as checagens determiníst
 scripts/rodar_eval_repetido.sh v3 3              # 3 rodadas (o modelo varia entre execuções)
 ```
 
-Os relatórios (`.json` com a conversa completa e `.md`) ficam em `evals/relatorios/`. Resultado atual do prompt padrão (`v3`, `deepseek-v4.1-flash`, 3 rodadas): 27, 28 e 28 de 28 casos; o `v1` fez 26, 26 e 27. Detalhes e limites desse resultado no ADR-014 e no ADR-015.
+Os relatórios (`.json` com a conversa completa, desde a fase 6, e `.md`) ficam em `evals/relatorios/`. Resultado atual do prompt padrão (`v3`, `deepseek-v4.1-flash`, 3 rodadas): 27, 28 e 28 de 28 casos; o `v1` fez 26, 26 e 27. Detalhes e limites desse resultado no ADR-014 e no ADR-015.
 
 ## Decisões e limites conhecidos
 
